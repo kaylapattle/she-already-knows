@@ -23,15 +23,31 @@ button{cursor:pointer;font-family:inherit;border:none;background:none}
 <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/@babel/standalone@7.22.5/babel.min.js"></script>
 <script>
-// Netlify function proxy - keeps API key secure on server
+// Try Netlify function first, fall back to direct API
 async function callClaude(messages, maxTokens) {
-  var res = await fetch("/api/claude", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({messages: messages, max_tokens: maxTokens || 1000})
-  });
-  if (!res.ok) throw new Error("API error: " + res.status);
-  return res.json();
+  // Try the Netlify function endpoint
+  var endpoints = [
+    "/.netlify/functions/claude",
+    "/api/claude",
+    "/netlify/functions/claude"
+  ];
+  
+  for (var i = 0; i < endpoints.length; i++) {
+    try {
+      var res = await fetch(endpoints[i], {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({messages: messages, max_tokens: maxTokens || 1000})
+      });
+      if (res.ok) {
+        console.log("AI connected via: " + endpoints[i]);
+        return await res.json();
+      }
+    } catch(e) {
+      console.log("Endpoint failed: " + endpoints[i], e.message);
+    }
+  }
+  throw new Error("All endpoints failed - using template");
 }
 </script>
 <script type="text/babel">
