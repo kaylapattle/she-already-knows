@@ -1,0 +1,849 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>She Already Knows — EntiHERly</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;1,400&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{min-height:100%;background:#0E0B08;overflow-x:hidden}
+#root{min-height:100vh;background:#0E0B08;background-image:radial-gradient(ellipse at 15% 15%,rgba(200,168,130,.07) 0%,transparent 55%),radial-gradient(ellipse at 85% 85%,rgba(139,110,80,.05) 0%,transparent 55%)}
+textarea,input{font-family:inherit;resize:none;outline:none}
+button{cursor:pointer;font-family:inherit;border:none;background:none}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes glow{0%,100%{box-shadow:0 0 40px rgba(200,168,130,.12)}50%{box-shadow:0 0 80px rgba(200,168,130,.28)}}
+@keyframes glow-pulse{0%,100%{opacity:1}50%{opacity:.45}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone@7.22.5/babel.min.js"></script>
+<script>
+// Netlify function proxy - keeps API key secure on server
+async function callClaude(messages, maxTokens) {
+  var res = await fetch("/api/claude", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({messages: messages, max_tokens: maxTokens || 1000})
+  });
+  if (!res.ok) throw new Error("API error: " + res.status);
+  return res.json();
+}
+</script>
+<script type="text/babel">
+const {useState, useEffect} = React;
+
+
+
+const C = {
+  bg:"#0E0B08", gold:"#C8A882", goldDim:"rgba(200,168,130,0.35)",
+  goldFaint:"rgba(200,168,130,0.08)", text:"#F5EFE6",
+  textDim:"rgba(245,239,230,0.55)", textFaint:"rgba(245,239,230,0.28)",
+  red:"rgba(200,90,90,0.7)", redBg:"rgba(200,90,90,0.08)",
+};
+const F = { display:"'Playfair Display', Georgia, serif", body:"'DM Sans', sans-serif" };
+
+const CRISIS_KW = ["kill myself","want to die","end my life","suicide","suicidal",
+  "self harm","self-harm","hurt myself","not want to be here","don't want to be here",
+  "can't go on","no reason to live","better off dead","harm myself","end it all","unalive"];
+const isCrisis = t => CRISIS_KW.some(k => t.toLowerCase().includes(k));
+
+const FEELING_PATTERNS = {
+  fear_failure:"abandonment", overwhelm:"overthinking",
+  fear_judgment:"people_pleasing", no_self_trust:"overthinking",
+};
+
+const FEELINGS = [
+  { id:"fear_failure",  emoji:"😔", label:"Fear of failure" },
+  { id:"overwhelm",     emoji:"😵", label:"Overwhelm" },
+  { id:"fear_judgment", emoji:"👀", label:"Fear of judgment" },
+  { id:"no_self_trust", emoji:"🌀", label:"Don't trust myself" },
+];
+
+const PATTERN_META = {
+  people_pleasing:{
+    color:"#C8A882",
+    callout:"You're not stuck because you don't know what to do.\nYou're stuck because choosing yourself still feels like something you have to earn.",
+  },
+  overthinking:{
+    color:"#A0A8C8",
+    callout:"You're not stuck because you don't have enough information.\nYou're stuck because moving means finding out — and finding out feels dangerous.",
+  },
+  abandonment:{
+    color:"#C8A082",
+    callout:"You're not stuck because you're not ready.\nYou're stuck because every time it starts working, something in you pumps the brakes.",
+  },
+};
+
+const SPIRAL_CHECKS = [
+  { id:"a", text:"I'm managing someone else's feelings instead of my own",  pattern:"people_pleasing" },
+  { id:"b", text:"I'm scared of what people will think",                     pattern:"people_pleasing" },
+  { id:"c", text:"I feel frozen — I've never done this before",              pattern:"overthinking"   },
+  { id:"d", text:"I keep asking everyone else what they would do",           pattern:"people_pleasing" },
+  { id:"e", text:"I know what I want but I'm scared to admit it",            pattern:"abandonment"    },
+  { id:"f", text:"I feel guilty for even considering this",                  pattern:"people_pleasing" },
+  { id:"g", text:"I've started before and it fell apart",                    pattern:"abandonment"    },
+  { id:"h", text:"I'm waiting until I feel more ready",                      pattern:"overthinking"   },
+];
+
+const LIMITING_BELIEFS = [
+  { id:"l1", text:"I'm not ready yet" },
+  { id:"l2", text:"Who am I to want this?" },
+  { id:"l3", text:"If I do this, I'll let someone down" },
+  { id:"l4", text:"I've failed before — why would this time be different?" },
+  { id:"l5", text:"I don't have enough time / money / energy" },
+  { id:"l6", text:"I need more information before I can decide" },
+  { id:"l7", text:"What if I make the wrong choice?" },
+  { id:"l8", text:"I'm too much — or not enough" },
+];
+
+const JOURNAL_PROMPTS = {
+  people_pleasing:[
+    "Write about the last time you chose someone else's comfort over your own clarity. What did that cost you?",
+    "What would you decide right now if no one else's reaction was part of the equation?",
+    "Who taught you that being liked was the same as being safe? What would it look like to unlearn that?",
+  ],
+  overthinking:[
+    "What's the one question you keep asking that can only be answered by moving? Write it down. Then write: 'I'm moving anyway.'",
+    "What have you been 'almost ready' for? For how long? What has waiting cost you?",
+    "Write to the version of you who already made the decision. What does she want you to know?",
+  ],
+  abandonment:[
+    "Describe the moment you usually stop. Be specific — what does it feel like right before you pull back?",
+    "What's the most recent thing you started and didn't finish? What was happening the moment you slowed down?",
+    "Write a letter to yourself from 6 months in the future who stayed. What does she say?",
+  ],
+};
+
+function detectPatternFromSpirals(spirals) {
+  const c = { people_pleasing:0, overthinking:0, abandonment:0 };
+  spirals.forEach(id => { const s = SPIRAL_CHECKS.find(x=>x.id===id); if(s) c[s.pattern]++; });
+  const top = Object.entries(c).sort((a,b)=>b[1]-a[1])[0];
+  return top[1]>0 ? top[0] : "overthinking";
+}
+
+function detectNSFromSpirals(spirals) {
+  const n=spirals.length;
+  if(n===0) return "clear";
+  if(spirals.includes("e")&&n<=2) return "aware";
+  if(spirals.includes("c")||spirals.includes("h")||n>=5) return "shutdown";
+  if(spirals.includes("b")||spirals.includes("f")) return "activated";
+  if(spirals.includes("a")||spirals.includes("d")) return "fawn";
+  return "overwhelmed";
+}
+
+// ─── Local response builders ──────────────────────────────────────────────────
+
+function buildInstantResponse(name, situation, feelingId) {
+  const pat = FEELING_PATTERNS[feelingId] || "overthinking";
+  const n = name || "Hey";
+  const emotionalDriver = {
+    fear_failure:"self_trust", overwhelm:"overwhelm",
+    fear_judgment:"fear_judgment", no_self_trust:"self_trust",
+  }[feelingId] || "self_trust";
+
+  const openers = {
+    people_pleasing:{
+      guilt:`${n}, you keep telling yourself you'll do it after everyone else is taken care of. After the kids are settled. After things calm down. That thought — "it's not the right time" — isn't about timing. It's about guilt. The guilt of choosing yourself when you've been taught that good women put themselves last.\n\nEvery time you get close to doing something for YOU, someone else's need shows up and you treat it as a sign to wait. You call it being responsible. But you've been waiting for a version of your life where it's finally okay to want things. That version isn't coming. Permission isn't coming. You have to take it.\n\nOne move: block one hour this week and label it with your name. Not "work." Not "me time." Your actual name. Protect it like an appointment for someone you love.`,
+      fear_judgment:`${n}, you know what you want to do. You might have already done it — written it, recorded it, made it. And now it's sitting somewhere unshared, because the moment you imagine people seeing it, something tightens in your chest.\n\nThat's not imposter syndrome. That's the fear of being seen and judged and found lacking — and it shows up right when you're about to do something real. You rewatch the video twelve times. You rewrite the caption until it doesn't sound like you anymore. You wait for it to be "ready" when what you're actually waiting for is a guarantee that no one will think less of you.\n\nOne move: share it with one person you trust before you share it publicly. Not for feedback. Just to practice being seen in a small room before a bigger one.`,
+      self_trust:`${n}, you already know what you need to do. What you're actually doing is running every option through a filter that asks "will everyone be okay with this" before you let yourself have an answer. That's not confusion. That's you abandoning yourself before anyone else gets the chance to.\n\nIf you choose yourself and it goes wrong, you can't blame anyone else. And somewhere you decided that being solely responsible for a decision that fails is the thing you can't sit with. So you keep asking. Keep making it everyone else's call.\n\nOne move: write down what you'd choose if no one else's reaction was part of the equation. Don't justify it. Just write it. You already knew the answer before you opened this.`,
+      overwhelm:`${n}, you have too many tabs open and you can't close any of them because each one feels important. You're not stuck because you don't know what to do. You're stuck because choosing one thing means not choosing the others — and that feels like losing.\n\nOverwhelm is how your brain avoids saying "this one matters most — and so do I." But everything can't be first. One thing has to be. And the fact that you can't pick is itself a decision — to stay exactly where you are.\n\nOne move: write every open tab in your head. Circle the one that's been there the longest. That one. Start there.`,
+    },
+    overthinking:{
+      guilt:`${n}, you feel like you shouldn't want this as much as you do. Like wanting something for yourself — time, success, space — makes you a bad mom, a bad partner, selfish. So you wait. Make the goal smaller. Tell yourself you'll go for it when things settle.\n\nThe guilt isn't telling you you're wrong. It's telling you you've been trained to treat your needs as less legitimate than everyone else's. And you've gotten so good at that training that wanting something now feels like a character flaw.\n\nOne move: write down one thing you want that you've been waiting to "deserve." Then ask: would you tell your daughter she has to earn the right to want that?`,
+      fear_judgment:`${n}, you've been sitting on something — an idea, a post, a version of yourself you haven't shown anyone yet. You keep finding reasons it's not ready. But the real reason it's still there is that once you put it out, people will have opinions. And those opinions might confirm what you're most afraid is true about you.\n\nThis is the loop: you create → you almost share → you imagine the judgment → you revise → you almost share → repeat. The thing never leaves the draft. Not because it's not ready. Because you're not sure you're safe enough to be seen.\n\nOne move: open the draft. Don't revise it. Give yourself 10 minutes to post it or delete it. No third option.`,
+      self_trust:`${n}, you don't need more information. You've had enough for a while. What you're doing is building a case for why you're not ready yet — one more article, one more plan, one more "I'll start after." That's not preparation. That's protection from finding out what happens when you go all in.\n\nThere's a specific moment this always leads to: you've done everything except the thing. Because the thing is where you have to find out.\n\nOne move: set a decision deadline — today or tomorrow. Write your answer before it arrives. The certainty you're waiting for only exists on the other side of the move.`,
+      overwhelm:`${n}, every time you narrow it down, something else feels equally important and you end up back at square one. That's not indecision. That's your brain in protection mode — because if you never pick, you never fail at the thing you picked.\n\nYou're not overwhelmed by options. You're overwhelmed by what it means to commit to one.\n\nOne move: pick the smallest possible version of the thing you care most about. Not the full vision. The first step only. Do it before anything else tomorrow.`,
+    },
+    abandonment:{
+      guilt:`${n}, part of why you keep stopping is that every time you start building something for yourself, a voice says "who do you think you are, doing this while everyone else needs things from you." So you slow down. Make it smaller. Tell yourself you'll come back when things settle. They never settle.\n\nThe guilt isn't protecting anyone. The people who love you aren't better off with you playing small. They're just more comfortable — and that's not the same thing.\n\nOne move: finish one small piece of the thing you've been stopping. Not to share it, not to make it perfect — just to prove to yourself that this time you stayed.`,
+      fear_judgment:`${n}, you started strong and then something shifted. Not because the work got bad — because it started getting real. Because you got close enough that people might actually see it. And the moment that became possible, your foot came off the gas.\n\nThe closer it gets to being visible, the louder the question: "what if they see it and it's not enough?" So you pull back. Not from the work. From being seen.\n\nOne move: share one piece of the work with someone this week. Not the finished version — a piece of it. Practice being seen before it's perfect.`,
+      self_trust:`${n}, you've been here before. Right at the edge of something that could actually work — and you found a way to slow down. One missed day became a week. A week became a reason. The reason became a story about why this wasn't for you anyway.\n\nYou didn't stop because it stopped working. You stopped because it started to. Because momentum means exposure. And if you try and it doesn't work, you can't protect yourself from what that might mean.\n\nOne move: don't start over. Pick up exactly where you left off — even if it's been weeks, even if it's messy. Starting over is how the pattern wins.`,
+      overwhelm:`${n}, you started with a clear vision and somewhere it became seventeen things. Now you're not doing any of them because you can't figure out which one to do first without the others falling behind.\n\nThis is what overwhelm does to someone with a big vision: it takes everything you care about and turns it into evidence that you can't do it. But you're not failing at the plan. You're trying to execute seventeen things at once.\n\nOne move: pick the one thing that, if you did only that for 30 days, would make everything else easier. Write it down. Let the rest wait.`,
+    },
+  };
+
+  const opener = openers[pat]?.[emotionalDriver] || openers[pat]?.self_trust || openers.overthinking.self_trust;
+  return { opening:opener, pattern:pat, callout:PATTERN_META[pat].callout, patternColor:PATTERN_META[pat].color };
+}
+
+function buildDeepResponse(data) {
+  const pat = detectPatternFromSpirals(data.spirals);
+  const name = data.name;
+  const limitingList = (data.limiting||[]).map(id=>LIMITING_BELIEFS.find(l=>l.id===id)?.text).filter(Boolean);
+  const topBelief = [...limitingList, data.customBelief].filter(Boolean)[0] || "I'm not ready";
+  const beliefId = (data.limiting||[])[0] || null;
+
+  // Belief flips: pattern × belief — each unique in structure, tone, hidden assumption
+  const beliefFlipMap = {
+    people_pleasing:{
+      l1:`"I'm not ready yet." Notice what happens right before you say that — someone else's feelings enter the picture, and suddenly your readiness becomes about whether they can handle your decision. That's not about readiness. That's about whether you're allowed to choose yourself. You've been allowed this whole time.`,
+      l2:`"Who am I to want this?" Here's what that question is actually doing: it's making you small enough that if you fail, it won't hurt as much. Because if you never really claimed it, you never really lost it. But you've been claiming it in private for a while now. The question is whether you're willing to do it in public.`,
+      l3:`"If I do this, I'll let someone down." You probably will. That's true. But look at what you're not asking: who are you letting down by not doing it? You've built a whole system around protecting other people from disappointment. You are not in that system. You need to be.`,
+      l4:`"I've failed before — why would this time be different?" Because last time you didn't know the exit was coming. This time you do. You can see the exact moment you'll want to stop. That's not the same situation. That's a completely different one.`,
+      l5:`"I don't have enough time." You've found time for every emergency that wasn't yours. Every last-minute request, every someone else's urgency. This isn't a time problem. It's a priority problem — and you're not on the list yet.`,
+      l6:`"I need more information first." You've been gathering information the way other people gather opinions — looking for someone or something to tell you it's okay to go. No article, podcast, or course is going to give you that. That's an inside job.`,
+      l7:`"What if I make the wrong choice?" You're treating this like there's one correct path and every other option is failure. That's not how any of this works. The wrong choice is the one you make for everyone else and regret privately for years. You already know which one that is.`,
+      l8:`"I'm too much — or not enough." You've been editing yourself so that people stay comfortable around you. But the version of you that makes everyone comfortable has never actually been chosen — she's just been tolerated. The unedited version? That's the one that builds something real.`,
+      default:`That belief — "${topBelief}" — has been the thing you use to make staying feel responsible. But staying isn't responsible. It's just easier to explain.`,
+    },
+    overthinking:{
+      l1:`"I'm not ready yet." You've been ready. The research is done. The plan exists. What you're actually waiting for is a feeling of certainty that only comes after you move — not before. You've reversed the order and then wondered why you're stuck.`,
+      l2:`"Who am I to want this?" Notice how that question only shows up right before you're about to do something real. When you're planning, it's quiet. When you're about to act, it's loud. That's not wisdom. That's fear timing its entrance.`,
+      l3:`"If I do this, I'll let someone down." You've been planning how not to let people down for so long that you haven't noticed: you've already let yourself down. Repeatedly. With a detailed plan.`,
+      l4:`"I've failed before — why would this time be different?" The difference is you're no longer surprised by the moment you want to quit. You've seen it enough times to recognize it. Recognizing it is the thing that makes it different.`,
+      l5:`"I don't have enough time / money / energy." You have more than you're giving yourself credit for. But more importantly — you've been waiting for conditions that will never be perfect. Conditions are just another thing to research instead of deciding.`,
+      l6:`"I need more information before I can decide." The next piece of information you actually need is on the other side of the decision. You can't research your way to it. You have to act your way to it.`,
+      l7:`"What if I make the wrong choice?" You're acting like there's one right answer and if you miss it, it's over. But you've made "wrong" choices before and figured it out. The thing you're really afraid of isn't the wrong choice — it's making a choice you can't blame on anyone else.`,
+      l8:`"I'm too much — or not enough." That loop — too much here, not enough there — is what keeps you analyzing instead of moving. Because as long as you're calibrating, you don't have to commit. Commit first. Calibrate later.`,
+      default:`That story — "${topBelief}" — is doing one specific thing: keeping you in the thinking phase. Because as long as you're thinking, you haven't tried yet. And if you haven't tried, the possibility is still intact.`,
+    },
+    abandonment:{
+      l1:`"I'm not ready yet." You said this last time too. Right around this point — when it started getting real and the stakes became visible. Readiness isn't the issue. Readiness is the story you tell when the real issue is too uncomfortable to name.`,
+      l2:`"Who am I to want this?" Every time you've gotten close and pulled back, this question was the thing that let you do it gracefully. It's not humility. It's an exit strategy. And you've used it enough times that you recognize it now. So what happens if you don't take it?`,
+      l3:`"If I do this, I'll let someone down." You've let yourself down every time you've stopped before the good part. Quietly, privately, in ways no one else saw. That counts. That person is also someone you can let down.`,
+      l4:`"I've failed before — why would this time be different?" Because this time you stopped at a different point. You stayed longer than you have before. That's evidence. Evidence that the story you've been telling yourself — "I always quit" — is already becoming less true.`,
+      l5:`"I don't have enough time / money / energy." You had less before and you still started. The resources aren't the variable. Your commitment is. When that changes, everything else reorganizes around it.`,
+      l6:`"I need more information." This one always shows up right before the finish line. Not at the beginning — you started without all the information then. It shows up now because now the stakes are real. The information you're looking for doesn't exist in research. It exists in what happens when you finish.`,
+      l7:`"What if I make the wrong choice?" You've already made one. You've made it several times — the choice to stop right here, right at this point, where it starts to matter. That's the wrong choice you keep making. This is a chance to make a different one.`,
+      l8:`"I'm too much — or not enough." You've been showing up at half-capacity because full capacity felt too risky. But half-capacity is exactly what keeps getting you to this point — close enough to see it, not committed enough to have it.`,
+      default:`That belief — "${topBelief}" — is what makes pulling back feel like a decision instead of a pattern. Name it for what it is: the thing your brain invented to make stopping feel reasonable.`,
+    },
+  };
+
+  const beliefFlips = beliefFlipMap[pat] || beliefFlipMap.overthinking;
+  const flip = (beliefId && beliefFlips[beliefId]) ? beliefFlips[beliefId] : beliefFlips.default;
+
+  const encouragements = {
+    people_pleasing:{
+      l1:`${name}, you've been waiting to feel ready so that everyone else would be comfortable with your decision. But readiness was never the issue — permission was. And you're the only one who can give it.`,
+      l2:`${name}, "who am I to want this" is what you ask when you're about to choose yourself and it scares you. The answer: you're the person who can't stop thinking about this. That's not an accident.`,
+      l3:`${name}, you've let people down by disappearing into what they needed. The one person who hasn't gotten the full version of you is you.`,
+      l4:`${name}, you didn't fail before — you stopped before you had what you have now. The pattern has a name now. That changes everything.`,
+      l5:`${name}, you've given your time and energy to everyone who asked. The question is whether you make yourself someone who asks too.`,
+      l6:`${name}, you've been gathering opinions from everyone except the one source that matters most — yourself.`,
+      l7:`${name}, the fear of the wrong choice has kept you making choices for everyone else. Their comfort isn't a decision. Your clarity is.`,
+      l8:`${name}, you've been editing yourself to stay acceptable. The unedited version is what everyone around you actually needs.`,
+      default:`${name}, you've spent so long making sure everyone else was okay. Here's the question no one has asked you lately: are you?`,
+    },
+    overthinking:{
+      l1:`${name}, the research was never going to make you feel ready. That feeling only comes after the step. You've been waiting at the wrong door.`,
+      l2:`${name}, "who am I to want this" has kept you in research mode instead of action mode. You're the exact person this keeps finding.`,
+      l3:`${name}, the fear of letting someone down has kept you planning instead of doing. But the person most let down by the waiting is you.`,
+      l4:`${name}, the past attempts weren't failures. They were data. You have more now. The question is whether you use it.`,
+      l5:`${name}, you have enough time — you just haven't decided this is non-negotiable yet. Watch what happens when you do.`,
+      l6:`${name}, the next answer is behind the next move — not the next search.`,
+      l7:`${name}, you've been so afraid of the wrong answer that you've been giving one every day by not deciding.`,
+      l8:`${name}, "too much or not enough" is the story of someone in the wrong rooms. You don't need to shrink. You need to find the right room.`,
+      default:`${name}, the clarity you've been searching for isn't in more information. It's on the other side of one decision made with what you already have.`,
+    },
+    abandonment:{
+      l1:`${name}, you've started before and stopped right before it got real. The "I'm not ready" feeling? That's exactly when you are.`,
+      l2:`${name}, every time you got close and pulled back, "who am I to want this" was the whisper underneath. This time you see it. That's different.`,
+      l3:`${name}, you stopped before because choosing yourself felt like losing everyone else. But the people worth keeping don't leave when you put yourself on the list.`,
+      l4:`${name}, last time you stopped right before the hard part became the good part. This time you can see that moment coming.`,
+      l5:`${name}, the resources will follow the decision — not the other way around. You've been waiting for the right conditions. They come after the commitment.`,
+      l6:`${name}, "I need more information" is the story you tell when you're about to do the thing that could actually work.`,
+      l7:`${name}, you've made the safe choice before — staying, slowing down, waiting. You know what that one costs. Try the other one.`,
+      l8:`${name}, full commitment is the only way to find out what's actually possible. And full commitment is exactly what the pattern has been preventing.`,
+      default:`${name}, this is the moment you usually leave. The fact that you named the pattern means something has already shifted.`,
+    },
+  };
+
+  const enc = encouragements[pat];
+  const encouragement = (beliefId && enc[beliefId]) ? enc[beliefId] : enc.default;
+  const prompts = JOURNAL_PROMPTS[pat];
+  const h = Math.floor(Math.random() * prompts.length);
+  return { pat, topBelief, beliefFlip:flip, encouragement, journalPrompt:prompts[h], patternColor:PATTERN_META[pat].color };
+}
+
+// ─── Shared UI ────────────────────────────────────────────────────────────────
+
+function Fade({ children, delay=0 }) {
+  const [v,setV]=useState(false);
+  useEffect(()=>{ const t=setTimeout(()=>setV(true),delay); return()=>clearTimeout(t); },[]);
+  return <div style={{ opacity:v?1:0, transform:v?"none":"translateY(14px)", transition:`opacity 0.6s ease ${delay}ms, transform 0.6s ease ${delay}ms` }}>{children}</div>;
+}
+
+function GoldBtn({ onClick, disabled, children, outline }) {
+  return (
+    <button onClick={onClick} disabled={disabled} style={{
+      width:"100%", padding:"15px",
+      background:disabled?"rgba(200,168,130,0.08)":outline?"transparent":C.gold,
+      border:outline?`1px solid ${disabled?C.goldDim:C.gold}`:"none",
+      borderRadius:"100px",
+      color:disabled?C.goldDim:outline?C.gold:"#1A1510",
+      fontFamily:F.body, fontSize:"13px", letterSpacing:"2px",
+      textTransform:"uppercase", fontWeight:"600",
+      cursor:disabled?"not-allowed":"pointer", transition:"all 0.25s ease",
+    }}>{children}</button>
+  );
+}
+
+function Tag({ color, children }) {
+  return (
+    <span style={{ display:"inline-flex", alignItems:"center", gap:"5px", background:`${color}15`, border:`1px solid ${color}40`, borderRadius:"100px", padding:"4px 11px", fontFamily:F.body, fontSize:"10px", color, letterSpacing:"1.8px", textTransform:"uppercase" }}>{children}</span>
+  );
+}
+
+function SelectItem({ selected, onClick, danger, children }) {
+  return (
+    <button onClick={onClick} style={{
+      display:"flex", alignItems:"center", gap:"10px", width:"100%",
+      background:selected?(danger?"rgba(200,90,90,0.1)":"rgba(200,168,130,0.1)"):"rgba(245,239,230,0.02)",
+      border:`1px solid ${selected?(danger?"rgba(200,90,90,0.5)":C.gold):"rgba(200,168,130,0.18)"}`,
+      borderRadius:"11px", padding:"12px 14px",
+      color:selected?(danger?"#F5D5D5":C.text):C.textDim,
+      fontFamily:F.body, fontSize:"14px", textAlign:"left",
+      cursor:"pointer", transition:"all 0.18s ease",
+    }}>
+      <span style={{ width:"18px", height:"18px", borderRadius:"50%", flexShrink:0, border:`1.5px solid ${selected?(danger?"rgba(200,90,90,0.6)":C.gold):"rgba(200,168,130,0.3)"}`, background:selected?(danger?"rgba(200,90,90,0.4)":C.gold):"transparent", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"9px", color:danger?"#F5D5D5":"#1A1510", transition:"all 0.18s ease" }}>{selected?"✓":""}</span>
+      {children}
+    </button>
+  );
+}
+
+function InputStyle({ value, onChange, placeholder, multi }) {
+  const s = { width:"100%", background:"rgba(245,239,230,0.03)", border:`1px solid rgba(200,168,130,0.2)`, borderRadius:"12px", padding:"13px 16px", color:C.text, fontFamily:F.body, fontSize:"15px", outline:"none", boxSizing:"border-box", transition:"border-color 0.2s", resize:"none" };
+  const f = { onFocus:e=>e.target.style.borderColor="rgba(200,168,130,0.55)", onBlur:e=>e.target.style.borderColor="rgba(200,168,130,0.2)" };
+  return multi ? <textarea value={value} onChange={onChange} placeholder={placeholder} style={{...s,minHeight:"110px"}} {...f}/> : <input value={value} onChange={onChange} placeholder={placeholder} style={s} {...f}/>;
+}
+
+// ─── V1: Instant Relief ───────────────────────────────────────────────────────
+
+function V1Welcome({ onStart }) {
+  return (
+    <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", minHeight:"100vh", padding:"40px 24px", textAlign:"center" }}>
+      <Fade delay={100}>
+        <div style={{ width:"64px", height:"64px", borderRadius:"50%", border:`1.5px solid ${C.gold}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:"24px", margin:"0 auto 28px", boxShadow:"0 0 40px rgba(200,168,130,0.15)", animation:"glow 3s ease-in-out infinite" }}>✦</div>
+        <h1 style={{ fontFamily:F.display, fontSize:"clamp(36px,9vw,56px)", fontWeight:"400", color:C.text, lineHeight:"1.1", marginBottom:"14px", letterSpacing:"-0.5px" }}>She Already<br/>Knows.</h1>
+        <p style={{ fontFamily:F.body, fontSize:"16px", color:C.textDim, lineHeight:"1.8", maxWidth:"280px", margin:"0 auto 8px" }}>You don't need another opinion.<br/>You need to hear your own voice.</p>
+        <p style={{ fontFamily:F.body, fontSize:"13px", color:C.textFaint, fontStyle:"italic", marginBottom:"44px" }}>Under 60 seconds.</p>
+        <GoldBtn onClick={onStart}>I'm ready</GoldBtn>
+        <p style={{ fontFamily:F.body, fontSize:"10px", color:"rgba(245,239,230,0.15)", letterSpacing:"2px", textTransform:"uppercase", marginTop:"40px" }}>EntiHERly · by Kayla</p>
+      </Fade>
+    </div>
+  );
+}
+
+function V1Input({ onContinue }) {
+  const [name,setName]=useState(""); const [email,setEmail]=useState("");
+  const [situation,setSituation]=useState(""); const [feeling,setFeeling]=useState(null);
+  const canGo = name.trim()&&email.trim()&&email.includes("@")&&situation.trim();
+
+  return (
+    <div style={{ padding:"48px 24px", maxWidth:"440px", margin:"0 auto" }}>
+      <Fade delay={50}>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"10px", marginBottom:"14px" }}>
+          <div>
+            <label style={{ display:"block", fontFamily:F.body, fontSize:"10px", color:`${C.gold}99`, letterSpacing:"1.5px", textTransform:"uppercase", marginBottom:"7px" }}>Name</label>
+            <InputStyle value={name} onChange={e=>setName(e.target.value)} placeholder="Your name"/>
+          </div>
+          <div>
+            <label style={{ display:"block", fontFamily:F.body, fontSize:"10px", color:`${C.gold}99`, letterSpacing:"1.5px", textTransform:"uppercase", marginBottom:"7px" }}>Email</label>
+            <InputStyle value={email} onChange={e=>setEmail(e.target.value)} placeholder="Your email"/>
+          </div>
+        </div>
+        <div style={{ marginBottom:"20px" }}>
+          <label style={{ display:"block", fontFamily:F.body, fontSize:"10px", color:`${C.gold}99`, letterSpacing:"1.5px", textTransform:"uppercase", marginBottom:"7px" }}>What decision are you stuck on right now?</label>
+          <InputStyle value={situation} onChange={e=>setSituation(e.target.value)} placeholder="Just say it. No fixing, no filtering. Stream of consciousness is perfect." multi/>
+        </div>
+        <div style={{ marginBottom:"24px" }}>
+          <label style={{ display:"block", fontFamily:F.body, fontSize:"10px", color:`${C.gold}99`, letterSpacing:"1.5px", textTransform:"uppercase", marginBottom:"10px" }}>What's coming up? <span style={{color:C.textFaint}}>(optional)</span></label>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"8px" }}>
+            {FEELINGS.map(f => (
+              <button key={f.id} onClick={()=>setFeeling(feeling===f.id?null:f.id)} style={{ background:feeling===f.id?"rgba(200,168,130,0.12)":"rgba(245,239,230,0.02)", border:`1px solid ${feeling===f.id?C.gold:"rgba(200,168,130,0.18)"}`, borderRadius:"10px", padding:"10px 12px", color:feeling===f.id?C.text:C.textDim, fontFamily:F.body, fontSize:"13px", cursor:"pointer", transition:"all 0.2s ease", textAlign:"left", display:"flex", alignItems:"center", gap:"8px" }}>
+                <span style={{fontSize:"16px"}}>{f.emoji}</span><span>{f.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+        <GoldBtn onClick={()=>canGo&&onContinue({name:name.trim(),email:email.trim(),situation,feeling})} disabled={!canGo}>Ask her →</GoldBtn>
+        <p style={{ fontFamily:F.body, fontSize:"11px", color:C.textFaint, textAlign:"center", marginTop:"10px" }}>No spam. Just Kayla, when it matters.</p>
+      </Fade>
+    </div>
+  );
+}
+
+function V1Response({ data, onUpgrade, onRestart }) {
+  const [resp,setResp]=useState(null); const [loading,setLoading]=useState(true); const [vis,setVis]=useState(false);
+
+  useEffect(()=>{
+    const local = buildInstantResponse(data.name, data.situation, data.feeling);
+    const feelingLabel = data.feeling ? FEELINGS.find(f=>f.id===data.feeling)?.label : "not specified";
+
+    const prompt = `You are ${data.name}'s higher self.
+
+BEFORE WRITING: Identify the PRIMARY emotional driver in what she shared:
+- GUILT: feels selfish choosing herself, "bad mom," "letting people down"
+- FEAR OF JUDGMENT: afraid of being seen, holds back from posting/sharing
+- SELF-TRUST: doesn't trust herself to follow through, starts over
+- OVERWHELM: too many options, shuts down, can't pick one thing
+
+The ENTIRE response must stay in that one emotional lane.
+
+RULES:
+- Mirror her emotional language FIRST before any insight
+- Use real specific moments: posting content, hitting publish, recording but not uploading, rewatching, starting over instead of finishing
+- NEVER: healing / journey / trust the process / you've got this / perfectionism / discipline (unless she showed it)
+- Do NOT be abstract or vague
+- Slightly confronting but safe
+
+HER NAME: ${data.name}
+STUCK ON: "${data.situation}"
+EMOTIONAL SIGNAL: ${feelingLabel}
+
+STRUCTURE — 3 short paragraphs:
+¶1 — MIRROR: Start with the exact emotional thoughts already in her head. Her language. Her name. She reads this and goes "...yes, exactly that."
+¶2 — REVEAL: One layer deeper into that SAME emotion. What specific moment does this show up? What is she actually protecting herself from? "You keep saying [X] — but that's not the real fear. The real fear is [specific emotional truth]."
+¶3 — ONE MOVE: One action tied to a real recognizable moment. End with one sentence she'd screenshot.
+
+SHORT. CONVERSATIONAL. NO HEADERS. NO BULLETS.`;
+
+    const timer=setTimeout(()=>{ setResp(local); setLoading(false); setTimeout(()=>setVis(true),100); },4000);
+
+    callClaude([{role:"user",content:prompt}], 600)
+    .then(r=>r.json())
+    .then(d=>{
+      clearTimeout(timer);
+      const text=d?.content?.map(c=>c.text||"").join("").trim();
+      if(text&&text.length>100){
+        const paras=text.split("\n").filter(p=>p.trim().length>3);
+        const closer=paras.pop();
+        setResp({...local,aiBody:paras.join("\n\n"),aiCloser:closer,isAI:true});
+      } else { setResp(local); }
+      setLoading(false); setTimeout(()=>setVis(true),100);
+    })
+    .catch(()=>{ clearTimeout(timer); setResp(local); setLoading(false); setTimeout(()=>setVis(true),100); });
+    return ()=>clearTimeout(timer);
+  },[]);
+
+  if(loading) return (
+    <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", minHeight:"100vh", padding:"40px" }}>
+      <div style={{ width:"32px", height:"32px", borderRadius:"50%", border:"1.5px solid transparent", borderTopColor:C.gold, animation:"spin 1s linear infinite", marginBottom:"20px" }}/>
+      <p style={{ fontFamily:F.display, fontSize:"16px", color:C.textFaint, fontStyle:"italic" }}>She's sitting with what you shared...</p>
+    </div>
+  );
+
+  const body = resp?.isAI ? resp.aiBody : resp?.opening;
+  const closer = resp?.isAI ? resp.aiCloser : null;
+  const patColor = resp?.patternColor || C.gold;
+
+  return (
+    <div style={{ padding:"40px 24px", maxWidth:"440px", margin:"0 auto" }}>
+      <Fade>
+        <div style={{ display:"flex", alignItems:"center", gap:"10px", marginBottom:"20px" }}>
+          <div style={{ width:"40px", height:"40px", borderRadius:"50%", border:`1px solid ${C.gold}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:"16px", flexShrink:0, boxShadow:"0 0 20px rgba(200,168,130,0.18)" }}>✦</div>
+          <div>
+            <p style={{ fontFamily:F.display, fontSize:"15px", color:C.text, margin:0 }}>{data.name}'s higher self.</p>
+            <p style={{ fontFamily:F.body, fontSize:"11px", color:C.textFaint, margin:0 }}>She sees everything. She's ready.</p>
+          </div>
+        </div>
+
+        <div style={{ background:"rgba(200,168,130,0.05)", border:"1px solid rgba(200,168,130,0.15)", borderRadius:"18px", padding:"22px", marginBottom:"14px" }}>
+          {body&&body.split("\n").filter(p=>p.trim().length>3).map((para,i,arr)=>{
+            const isLast = !resp?.isAI && i===arr.length-1;
+            return <p key={i} style={{ fontFamily:F.body, fontSize:"15px", color:isLast?`${C.gold}EE`:"rgba(245,239,230,0.9)", lineHeight:"1.9", fontStyle:isLast?"italic":"normal", margin:i===0?"0 0 18px":"18px 0 0", paddingTop:isLast?"16px":0, borderTop:isLast?`1px solid rgba(200,168,130,0.12)`:"none" }}>{para}</p>;
+          })}
+          {closer&&<p style={{ fontFamily:F.body, fontSize:"15px", color:`${C.gold}EE`, lineHeight:"1.8", fontStyle:"italic", marginTop:"18px", paddingTop:"16px", borderTop:"1px solid rgba(200,168,130,0.12)" }}>{closer}</p>}
+        </div>
+
+        {resp?.callout&&(
+          <div style={{ background:`${patColor}12`, border:`1px solid ${patColor}35`, borderLeft:`3px solid ${patColor}`, borderRadius:"12px", padding:"14px 16px", marginBottom:"20px" }}>
+            <p style={{ fontFamily:F.body, fontSize:"10px", color:patColor, letterSpacing:"2px", textTransform:"uppercase", marginBottom:"8px" }}>What this revealed about you</p>
+            {resp.callout.split("\n").map((line,i)=>(
+              <p key={i} style={{ fontFamily:F.display, fontSize:"14px", color:"rgba(245,239,230,0.85)", margin:i===0?"0 0 4px":"0", lineHeight:"1.5", fontStyle:"italic" }}>{line}</p>
+            ))}
+          </div>
+        )}
+
+        <p style={{ fontFamily:F.body, fontSize:"12px", color:C.textFaint, textAlign:"center", fontStyle:"italic", lineHeight:"1.7", marginBottom:"20px" }}>
+          The goal isn't to use this forever.<br/>
+          <span style={{color:`${C.gold}66`}}>It's to get to a point where you don't need it.</span>
+        </p>
+
+        <div style={{ background:"rgba(200,168,130,0.07)", border:"1px solid rgba(200,168,130,0.22)", borderRadius:"16px", padding:"20px", marginBottom:"12px" }}>
+          <p style={{ fontFamily:F.display, fontSize:"15px", color:C.text, marginBottom:"8px", lineHeight:"1.3" }}>Want to understand the full pattern?</p>
+          <p style={{ fontFamily:F.body, fontSize:"13px", color:C.textDim, lineHeight:"1.7", marginBottom:"16px" }}>The deeper version breaks down exactly why you keep ending up here — and gives you the tools to stop.</p>
+          <GoldBtn onClick={onUpgrade}>Go deeper →</GoldBtn>
+        </div>
+        <GoldBtn onClick={onRestart} outline>Start over</GoldBtn>
+      </Fade>
+    </div>
+  );
+}
+
+// ─── Crisis Screen ────────────────────────────────────────────────────────────
+
+function CrisisScreen({ onContinue }) {
+  return (
+    <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", minHeight:"100vh", padding:"40px 24px", textAlign:"center" }}>
+      <Fade>
+        <div style={{ fontSize:"32px", marginBottom:"20px" }}>🤍</div>
+        <h2 style={{ fontFamily:F.display, fontSize:"26px", fontWeight:"400", color:C.text, marginBottom:"12px", lineHeight:"1.3" }}>Hold on a second.</h2>
+        <p style={{ fontFamily:F.body, fontSize:"14px", color:C.textDim, lineHeight:"1.8", maxWidth:"290px", marginBottom:"28px" }}>Something in what you shared tells me you might be carrying more than a decision right now. You deserve real support for that.</p>
+        <div style={{ background:"rgba(200,168,130,0.08)", border:"1px solid rgba(200,168,130,0.22)", borderRadius:"14px", padding:"20px", maxWidth:"300px", width:"100%", marginBottom:"28px" }}>
+          <p style={{ fontFamily:F.body, fontSize:"11px", color:`${C.gold}88`, letterSpacing:"1.5px", textTransform:"uppercase", marginBottom:"12px" }}>If you need support right now</p>
+          <p style={{ fontFamily:F.body, fontSize:"15px", color:C.text, fontWeight:"600", marginBottom:"4px" }}>988 Suicide & Crisis Lifeline</p>
+          <p style={{ fontFamily:F.body, fontSize:"13px", color:C.textDim, marginBottom:"14px" }}>Call or text <strong style={{color:C.gold}}>988</strong> — 24/7</p>
+          <p style={{ fontFamily:F.body, fontSize:"15px", color:C.text, fontWeight:"600", marginBottom:"4px" }}>Crisis Text Line</p>
+          <p style={{ fontFamily:F.body, fontSize:"13px", color:C.textDim }}>Text <strong style={{color:C.gold}}>HOME</strong> to <strong style={{color:C.gold}}>741741</strong></p>
+        </div>
+        <p style={{ fontFamily:F.body, fontSize:"12px", color:C.textFaint, fontStyle:"italic", maxWidth:"270px", marginBottom:"24px", lineHeight:"1.6" }}>Asking for help is its own kind of self-trust.</p>
+        <GoldBtn onClick={onContinue}>I'm okay — continue</GoldBtn>
+      </Fade>
+    </div>
+  );
+}
+
+// ─── V2: Deeper Transformation ────────────────────────────────────────────────
+
+function V2Gate({ name, onUnlock, onBack }) {
+  return (
+    <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", minHeight:"100vh", padding:"40px 24px", textAlign:"center" }}>
+      <Fade delay={100}>
+        <div style={{ fontSize:"32px", marginBottom:"20px" }}>🔓</div>
+        <h2 style={{ fontFamily:F.display, fontSize:"28px", fontWeight:"400", color:C.text, marginBottom:"12px", lineHeight:"1.3" }}>The deeper work,<br/>{name}.</h2>
+        <p style={{ fontFamily:F.body, fontSize:"14px", color:C.textDim, lineHeight:"1.75", maxWidth:"300px", marginBottom:"12px" }}>Version 2 breaks down your pattern completely — why you keep ending up here, what your brain has been protecting you from, and a journaling prompt that actually moves the needle.</p>
+        <p style={{ fontFamily:F.body, fontSize:"13px", color:`${C.gold}88`, lineHeight:"1.6", maxWidth:"280px", marginBottom:"36px", fontStyle:"italic" }}>Takes about 3 minutes. Worth every one.</p>
+        <div style={{ width:"100%", maxWidth:"320px" }}>
+          <GoldBtn onClick={onUnlock}>Unlock deeper work →</GoldBtn>
+          <div style={{marginTop:"10px"}}><GoldBtn onClick={onBack} outline>← Back</GoldBtn></div>
+        </div>
+      </Fade>
+    </div>
+  );
+}
+
+const V2S = { GATE:"gate", GOAL:"goal", SPIRAL:"spiral", LIMITING:"limiting", COACH:"coach", BREAKDOWN:"breakdown", DONE:"done" };
+
+function V2App({ initData, onFinish }) {
+  const [screen,setScreen]=useState(V2S.GATE);
+  const [d,setD]=useState({ goal:"", spirals:[], limiting:[], customBelief:"", showCustom:false });
+  const go=(s,extra={})=>{ setD(p=>({...p,...extra})); setScreen(s); };
+
+  if(screen===V2S.GATE) return <V2Gate name={initData.name} onUnlock={()=>setScreen(V2S.GOAL)} onBack={onFinish}/>;
+
+  if(screen===V2S.GOAL) return (
+    <div style={{ padding:"48px 24px", maxWidth:"440px", margin:"0 auto" }}>
+      <Fade>
+        <Tag color={C.gold}>Going deeper</Tag>
+        <h2 style={{ fontFamily:F.display, fontSize:"26px", fontWeight:"400", color:C.text, margin:"16px 0 10px", lineHeight:"1.3" }}>What are you actively<br/>working toward?</h2>
+        <p style={{ fontFamily:F.body, fontSize:"14px", color:C.textDim, marginBottom:"24px", lineHeight:"1.7" }}>Your north star — the big thing you're building. This stays separate from the decision you're stuck on.</p>
+        <InputStyle value={d.goal} onChange={e=>setD(p=>({...p,goal:e.target.value}))} placeholder="e.g. Build my brand and leave my 9-5. Be present for my kids and earn well doing what I love." multi/>
+        <div style={{marginTop:"16px"}}><GoldBtn onClick={()=>d.goal.trim()&&go(V2S.SPIRAL)} disabled={!d.goal.trim()}>Continue →</GoldBtn></div>
+      </Fade>
+    </div>
+  );
+
+  if(screen===V2S.SPIRAL) return (
+    <div style={{ padding:"48px 24px", maxWidth:"440px", margin:"0 auto" }}>
+      <Fade>
+        <Tag color={C.gold}>The spiral</Tag>
+        <h2 style={{ fontFamily:F.display, fontSize:"26px", fontWeight:"400", color:C.text, margin:"16px 0 10px", lineHeight:"1.3" }}>Be honest.<br/>What's showing up?</h2>
+        <p style={{ fontFamily:F.body, fontSize:"14px", color:C.textDim, marginBottom:"24px" }}>Check everything that feels true right now.</p>
+        <div style={{ display:"flex", flexDirection:"column", gap:"8px", marginBottom:"20px" }}>
+          {SPIRAL_CHECKS.map(item=>(
+            <SelectItem key={item.id} selected={d.spirals.includes(item.id)} onClick={()=>setD(p=>({...p,spirals:p.spirals.includes(item.id)?p.spirals.filter(x=>x!==item.id):[...p.spirals,item.id]}))}>
+              {item.text}
+            </SelectItem>
+          ))}
+        </div>
+        <GoldBtn onClick={()=>go(V2S.LIMITING)}>{d.spirals.length===0?"None of these — I'm just stuck →":`This is me (${d.spirals.length}) →`}</GoldBtn>
+      </Fade>
+    </div>
+  );
+
+  if(screen===V2S.LIMITING) return (
+    <div style={{ padding:"48px 24px", maxWidth:"440px", margin:"0 auto" }}>
+      <Fade>
+        <Tag color={C.red}>The block</Tag>
+        <h2 style={{ fontFamily:F.display, fontSize:"26px", fontWeight:"400", color:C.text, margin:"16px 0 10px", lineHeight:"1.3" }}>What's the story<br/>stopping you?</h2>
+        <p style={{ fontFamily:F.body, fontSize:"14px", color:C.textDim, marginBottom:"24px", lineHeight:"1.7" }}>This is the voice winning right now. Name it.</p>
+        <div style={{ display:"flex", flexDirection:"column", gap:"8px", marginBottom:"12px" }}>
+          {LIMITING_BELIEFS.map(item=>(
+            <SelectItem key={item.id} danger selected={d.limiting.includes(item.id)} onClick={()=>setD(p=>({...p,limiting:p.limiting.includes(item.id)?p.limiting.filter(x=>x!==item.id):[...p.limiting,item.id]}))}>
+              {item.text}
+            </SelectItem>
+          ))}
+        </div>
+        <button onClick={()=>setD(p=>({...p,showCustom:!p.showCustom}))} style={{ background:"transparent", border:"1px dashed rgba(200,168,130,0.22)", borderRadius:"10px", padding:"11px 14px", width:"100%", color:C.textFaint, fontFamily:F.body, fontSize:"13px", cursor:"pointer", textAlign:"left", display:"flex", alignItems:"center", gap:"8px", marginBottom:"8px" }}>
+          <span>{d.showCustom?"−":"+"}</span> Mine isn't here — let me write it
+        </button>
+        {d.showCustom&&<InputStyle value={d.customBelief} onChange={e=>setD(p=>({...p,customBelief:e.target.value}))} placeholder="Write the exact thought. Doesn't have to be pretty." multi/>}
+        <div style={{marginTop:"12px"}}><GoldBtn onClick={()=>(d.limiting.length>0||d.customBelief.trim())&&go(V2S.COACH)} disabled={d.limiting.length===0&&!d.customBelief.trim()}>Now let's flip it →</GoldBtn></div>
+      </Fade>
+    </div>
+  );
+
+  if(screen===V2S.COACH) return <V2Coach data={{...initData,...d}} onDone={()=>go(V2S.BREAKDOWN)}/>;
+  if(screen===V2S.BREAKDOWN) return <V2Breakdown data={{...initData,...d}} onDone={()=>go(V2S.DONE)}/>;
+  if(screen===V2S.DONE) return <V2Done name={initData.name} onRestart={onFinish}/>;
+  return null;
+}
+
+function V2Coach({ data, onDone }) {
+  const [resp,setResp]=useState(null); const [loading,setLoading]=useState(true); const [vis,setVis]=useState(false);
+  const pat = detectPatternFromSpirals(data.spirals||[]);
+  const pm = PATTERN_META[pat];
+
+  useEffect(()=>{
+    const local = buildDeepResponse(data);
+    const limitingList=(data.limiting||[]).map(id=>LIMITING_BELIEFS.find(l=>l.id===id)?.text).filter(Boolean);
+    const allLimiting=[...limitingList,data.customBelief].filter(Boolean);
+    const spiralList=(data.spirals||[]).map(id=>SPIRAL_CHECKS.find(s=>s.id===id)?.text).filter(Boolean);
+
+    const prompt = `You are ${data.name}'s higher self — the version that already did the inner work.
+
+STEP 1 — Identify PRIMARY emotional driver from her inputs:
+- GUILT: feels selfish choosing herself
+- FEAR OF JUDGMENT: afraid of being seen, holds back from posting/sharing
+- SELF-TRUST: doesn't trust herself to follow through
+- OVERWHELM: too many options, shuts down
+
+Stay in that ONE emotional lane the entire response.
+
+RULES: Mirror her emotional language first. Use specific real moments (posting content, hitting publish, recording but not uploading, starting over). NEVER: healing / journey / trust the process / you've got this. Not abstract. Not generic.
+
+NAME: ${data.name}
+GOAL: "${data.goal}"
+SITUATION: "${data.situation}"
+PATTERN: ${pat}
+WHAT'S SHOWING UP: ${spiralList.join("; ")||"Just stuck"}
+BELIEF: "${allLimiting[0]||"I'm not ready"}"
+
+5 SHORT PARAGRAPHS — no headers, no bullets:
+¶1 — MIRROR: Her exact emotional thoughts. Her name. She reads it and goes "...yes, that's exactly it."
+¶2 — REVEAL: One layer deeper into that SAME emotion. What specific moment does it show up? "You keep saying [X] — but that's not the real fear. The real fear is [specific thing tied to her situation]."
+¶3 — PATTERN AS PROTECTION: Name what it protected her from (one sentence). What it now costs her (one sentence).
+¶4 — BELIEF FLIP: Take "${allLimiting[0]||"I'm not ready"}". Identify the hidden assumption. Flip THAT assumption specifically. Vary tone — observational, direct, or grounding. Do NOT use: "you don't trust yourself" / "the only wrong choice is not choosing."
+¶5 — ONE MOVE + screenshot sentence.`;
+
+    const timer=setTimeout(()=>{ setResp(local); setLoading(false); setTimeout(()=>setVis(true),150); },4500);
+    callClaude([{role:"user",content:prompt}], 1100)
+    .then(r=>r.json())
+    .then(d2=>{
+      clearTimeout(timer);
+      const text=d2?.content?.map(c=>c.text||"").join("").trim();
+      if(text&&text.length>200){
+        const paras=text.split("\n").filter(p=>p.trim().length>3);
+        const closer=paras.pop();
+        setResp({...local,aiBody:paras.join("\n\n"),aiCloser:closer,isAI:true});
+      } else { setResp(local); }
+      setLoading(false); setTimeout(()=>setVis(true),150);
+    })
+    .catch(()=>{ clearTimeout(timer); setResp(local); setLoading(false); setTimeout(()=>setVis(true),150); });
+    return ()=>clearTimeout(timer);
+  },[]);
+
+  return (
+    <div style={{ padding:"48px 24px", maxWidth:"440px", margin:"0 auto" }}>
+      <div style={{ background:`${pm.color}12`, border:`1px solid ${pm.color}38`, borderLeft:`3px solid ${pm.color}`, borderRadius:"12px", padding:"14px 16px", marginBottom:"14px" }}>
+        <p style={{ fontFamily:F.body, fontSize:"10px", color:pm.color, letterSpacing:"2px", textTransform:"uppercase", marginBottom:"8px" }}>Here's what this revealed about you</p>
+        {pm.callout.split("\n").map((line,i)=>(
+          <p key={i} style={{ fontFamily:F.display, fontSize:"14px", color:"rgba(245,239,230,0.88)", margin:i===0?"0 0 4px":"0", lineHeight:"1.5", fontStyle:"italic" }}>{line}</p>
+        ))}
+      </div>
+      <div style={{ display:"flex", alignItems:"center", gap:"10px", marginBottom:"16px" }}>
+        <div style={{ width:"38px", height:"38px", borderRadius:"50%", border:`1px solid ${C.gold}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:"15px", flexShrink:0 }}>✦</div>
+        <div>
+          <p style={{ fontFamily:F.display, fontSize:"15px", color:C.text, margin:0 }}>{data.name}'s higher self.</p>
+          <p style={{ fontFamily:F.body, fontSize:"11px", color:C.textFaint, margin:0 }}>She sees everything. She's ready.</p>
+        </div>
+      </div>
+
+      {loading ? (
+        <div style={{ padding:"48px 0", textAlign:"center" }}>
+          <div style={{ width:"30px", height:"30px", borderRadius:"50%", border:"1.5px solid transparent", borderTopColor:C.gold, margin:"0 auto 16px", animation:"spin 1s linear infinite" }}/>
+          <p style={{ fontFamily:F.display, fontSize:"15px", color:C.textFaint, fontStyle:"italic" }}>She's sitting with everything<br/>you just shared...</p>
+        </div>
+      ) : (
+        <div style={{ opacity:vis?1:0, transform:vis?"none":"translateY(12px)", transition:"all 0.6s ease" }}>
+          <div style={{ background:"rgba(200,168,130,0.05)", border:"1px solid rgba(200,168,130,0.15)", borderRadius:"18px", padding:"22px", marginBottom:"14px" }}>
+            {(resp?.isAI?resp.aiBody:resp?.beliefFlip||"").split("\n").filter(p=>p.trim().length>3).map((para,i)=>(
+              <p key={i} style={{ fontFamily:F.body, fontSize:"15px", color:"rgba(245,239,230,0.9)", lineHeight:"1.9", margin:i===0?"0 0 18px":"18px 0 0" }}>{para}</p>
+            ))}
+            {resp?.isAI&&resp.aiCloser&&(
+              <p style={{ fontFamily:F.body, fontSize:"15px", color:`${C.gold}EE`, lineHeight:"1.8", fontStyle:"italic", marginTop:"18px", paddingTop:"16px", borderTop:"1px solid rgba(200,168,130,0.12)" }}>{resp.aiCloser}</p>
+            )}
+          </div>
+          <div style={{ background:"rgba(245,239,230,0.02)", border:"1px solid rgba(200,168,130,0.1)", borderRadius:"11px", padding:"13px 15px", marginBottom:"20px", textAlign:"center" }}>
+            <p style={{ fontFamily:F.body, fontSize:"11px", color:C.textFaint, lineHeight:"1.7", margin:0, fontStyle:"italic" }}>
+              The goal isn't to use this forever. It's to get to a point where you don't need it.<br/>
+              <span style={{color:`${C.gold}55`}}>That's what building self-trust looks like.</span>
+            </p>
+          </div>
+          <GoldBtn onClick={onDone}>Here's what this means →</GoldBtn>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function V2Breakdown({ data, onDone }) {
+  const [v,setV]=useState(false);
+  useEffect(()=>{ setTimeout(()=>setV(true),150); },[]);
+  const bd = buildDeepResponse(data);
+  const pat = detectPatternFromSpirals(data.spirals||[]);
+
+  const fearChose = {
+    people_pleasing:["Ask everyone else what they think","Make the decision that keeps the peace","Put their comfort ahead of your clarity","Stay silent about what you actually need"],
+    overthinking:   ["Research it one more time","Wait until you feel more ready","Make a plan instead of a move","Collect more information instead of acting"],
+    abandonment:    ["Slow down right when momentum built","Find a reason this is the wrong path","Let one missed day become a full stop","Pull back right before it gets real"],
+  }[pat];
+
+  const higherWould = {
+    people_pleasing:["Ask herself what SHE actually needs","Make the decision that honors her values","Say the true thing, even uncomfortably","Choose her own clarity over their comfort"],
+    overthinking:   ["Move with what she already has","Take one action before she feels ready","Trust the next step reveals the step after","Move, then adjust — not the other way around"],
+    abandonment:    ["Stay through the moment she usually leaves","Treat one missed day as a pause","Keep going when it stops feeling exciting","Remind herself: this is where it gets real"],
+  }[pat];
+
+  return (
+    <div style={{ padding:"40px 24px", maxWidth:"440px", margin:"0 auto", opacity:v?1:0, transform:v?"none":"translateY(14px)", transition:"all 0.6s ease" }}>
+      <div style={{ textAlign:"center", marginBottom:"24px" }}>
+        <Tag color={bd.patternColor}>{pat.replace("_"," ")} pattern</Tag>
+        <h2 style={{ fontFamily:F.display, fontSize:"22px", fontWeight:"400", color:C.text, margin:"14px 0 6px", lineHeight:"1.3" }}>Here's what was really happening.</h2>
+        <p style={{ fontFamily:F.body, fontSize:"13px", color:C.textFaint, lineHeight:"1.6" }}>This isn't about what you did wrong.<br/>It's about what your brain was protecting you from.</p>
+      </div>
+
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"10px", marginBottom:"14px" }}>
+        <div style={{ background:C.redBg, border:"1px solid rgba(200,90,90,0.22)", borderRadius:"13px", padding:"13px" }}>
+          <p style={{ fontFamily:F.body, fontSize:"10px", color:C.red, letterSpacing:"1.8px", textTransform:"uppercase", marginBottom:"10px" }}>Fear chose</p>
+          {fearChose.map((item,i)=>(
+            <div key={i} style={{ display:"flex", gap:"7px", alignItems:"flex-start", marginBottom:i<fearChose.length-1?"9px":0 }}>
+              <span style={{ color:"rgba(200,90,90,0.55)", fontSize:"11px", marginTop:"2px", flexShrink:0 }}>✕</span>
+              <p style={{ fontFamily:F.body, fontSize:"12px", color:C.textDim, lineHeight:"1.5", margin:0 }}>{item}</p>
+            </div>
+          ))}
+        </div>
+        <div style={{ background:C.goldFaint, border:"1px solid rgba(200,168,130,0.25)", borderRadius:"13px", padding:"13px" }}>
+          <p style={{ fontFamily:F.body, fontSize:"10px", color:C.gold, letterSpacing:"1.8px", textTransform:"uppercase", marginBottom:"10px" }}>Your higher self would</p>
+          {higherWould.map((item,i)=>(
+            <div key={i} style={{ display:"flex", gap:"7px", alignItems:"flex-start", marginBottom:i<higherWould.length-1?"9px":0 }}>
+              <span style={{ color:C.gold, fontSize:"11px", marginTop:"2px", flexShrink:0 }}>✦</span>
+              <p style={{ fontFamily:F.body, fontSize:"12px", color:"rgba(245,239,230,0.85)", lineHeight:"1.5", margin:0 }}>{item}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ background:C.goldFaint, border:"1px solid rgba(200,168,130,0.18)", borderRadius:"13px", padding:"15px 17px", marginBottom:"14px" }}>
+        <p style={{ fontFamily:F.body, fontSize:"10px", color:`${C.gold}88`, letterSpacing:"1.5px", textTransform:"uppercase", marginBottom:"11px" }}>The belief flip</p>
+        <div style={{ display:"flex", alignItems:"flex-start", gap:"9px", marginBottom:"10px" }}>
+          <span style={{ fontFamily:F.body, fontSize:"10px", color:"rgba(200,90,90,0.7)", letterSpacing:"1px", textTransform:"uppercase", flexShrink:0, paddingTop:"2px" }}>Was</span>
+          <p style={{ fontFamily:F.body, fontSize:"13px", color:C.textDim, margin:0, fontStyle:"italic" }}>"{bd.topBelief}"</p>
+        </div>
+        <div style={{ height:"1px", background:"rgba(200,168,130,0.1)", marginBottom:"10px" }}/>
+        <div style={{ display:"flex", alignItems:"flex-start", gap:"9px" }}>
+          <span style={{ fontFamily:F.body, fontSize:"10px", color:C.gold, letterSpacing:"1px", textTransform:"uppercase", flexShrink:0, paddingTop:"2px" }}>Truth</span>
+          <p style={{ fontFamily:F.body, fontSize:"13px", color:"rgba(245,239,230,0.92)", margin:0, fontWeight:"500", lineHeight:"1.65" }}>{bd.beliefFlip}</p>
+        </div>
+      </div>
+
+      <div style={{ background:`linear-gradient(135deg,${bd.patternColor}14,${bd.patternColor}05)`, border:`1px solid ${bd.patternColor}30`, borderRadius:"13px", padding:"16px", marginBottom:"14px", textAlign:"center" }}>
+        <p style={{ fontFamily:F.display, fontSize:"14px", color:"rgba(245,239,230,0.9)", lineHeight:"1.75", margin:0, fontStyle:"italic" }}>{bd.encouragement}</p>
+      </div>
+
+      <div style={{ background:"rgba(245,239,230,0.02)", border:"1px solid rgba(200,168,130,0.14)", borderRadius:"13px", padding:"15px 17px", marginBottom:"22px" }}>
+        <p style={{ fontFamily:F.body, fontSize:"10px", color:`${C.gold}77`, letterSpacing:"1.5px", textTransform:"uppercase", marginBottom:"8px" }}>Your journal prompt</p>
+        <p style={{ fontFamily:F.body, fontSize:"14px", color:C.textDim, lineHeight:"1.75", margin:0, fontStyle:"italic" }}>"{bd.journalPrompt}"</p>
+      </div>
+
+      <GoldBtn onClick={onDone}>She gets it now ✦</GoldBtn>
+    </div>
+  );
+}
+
+function V2Done({ name, onRestart }) {
+  const [v,setV]=useState(false);
+  const [joinList,setJoinList]=useState(false);
+  const [interests,setInterests]=useState([]);
+  const [saved,setSaved]=useState(false);
+  useEffect(()=>{ setTimeout(()=>setV(true),150); },[]);
+
+  const opts=[
+    {id:"app",icon:"✦",label:"Early app access",sub:"Be first when she launches"},
+    {id:"retreat",icon:"🌿",label:"Retreats & events",sub:"In-person with Kayla"},
+    {id:"community",icon:"🤝",label:"Accountability community",sub:"Women doing the work together"},
+    {id:"coaching",icon:"💬",label:"1:1 or group coaching",sub:"Direct support"},
+  ];
+  const toggle=id=>setInterests(p=>p.includes(id)?p.filter(x=>x!==id):[...p,id]);
+
+  return (
+    <div style={{ display:"flex", flexDirection:"column", alignItems:"center", minHeight:"100vh", padding:"48px 24px 40px", maxWidth:"440px", margin:"0 auto", opacity:v?1:0, transform:v?"none":"translateY(16px)", transition:"all 0.7s ease" }}>
+      <div style={{ fontSize:"36px", marginBottom:"20px", animation:"glow-pulse 2.5s ease infinite" }}>✦</div>
+      <style>{`@keyframes glow-pulse{0%,100%{opacity:1}50%{opacity:0.45}}`}</style>
+      <h2 style={{ fontFamily:F.display, fontSize:"30px", fontWeight:"400", color:C.text, marginBottom:"10px", textAlign:"center", lineHeight:"1.2" }}>{name}, you already knew.</h2>
+      <p style={{ fontFamily:F.body, fontSize:"14px", color:C.textDim, lineHeight:"1.85", maxWidth:"270px", marginBottom:"32px", textAlign:"center" }}>The more you come back here,<br/>the less you'll need to.<br/><br/>That's the whole point.</p>
+
+      {!saved?(
+        <div style={{ width:"100%", background:C.goldFaint, border:"1px solid rgba(200,168,130,0.2)", borderRadius:"16px", padding:"20px", marginBottom:"16px" }}>
+          <p style={{ fontFamily:F.display, fontSize:"15px", color:C.text, marginBottom:"6px", lineHeight:"1.3" }}>If this helped you see your patterns differently…</p>
+          <p style={{ fontFamily:F.body, fontSize:"13px", color:C.textDim, lineHeight:"1.7", marginBottom:"16px" }}>Kayla is building retreats, community, and coaching to help you actually follow through — and become the woman who trusts herself. Not just knows she should. <em style={{color:`${C.gold}88`}}>Does.</em></p>
+          <button onClick={()=>setJoinList(p=>!p)} style={{ display:"flex", alignItems:"center", gap:"10px", width:"100%", background:joinList?"rgba(200,168,130,0.1)":"rgba(245,239,230,0.02)", border:`1px solid ${joinList?C.gold:"rgba(200,168,130,0.2)"}`, borderRadius:"10px", padding:"12px 14px", cursor:"pointer", transition:"all 0.2s", marginBottom:joinList?"12px":"0" }}>
+            <span style={{ width:"18px", height:"18px", borderRadius:"4px", border:`1.5px solid ${joinList?C.gold:"rgba(200,168,130,0.3)"}`, background:joinList?C.gold:"transparent", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"10px", color:"#1A1510", flexShrink:0 }}>{joinList?"✓":""}</span>
+            <p style={{ fontFamily:F.body, fontSize:"14px", color:joinList?C.text:C.textDim, margin:0, fontWeight:joinList?"500":"400" }}>Add me to the EntiHERly waitlist</p>
+          </button>
+          {joinList&&(
+            <>
+              <div style={{ display:"flex", flexDirection:"column", gap:"7px", marginBottom:"14px" }}>
+                <p style={{ fontFamily:F.body, fontSize:"10px", color:`${C.gold}77`, letterSpacing:"1.5px", textTransform:"uppercase", marginBottom:"4px" }}>Most interested in:</p>
+                {opts.map(opt=>(
+                  <button key={opt.id} onClick={()=>toggle(opt.id)} style={{ display:"flex", alignItems:"center", gap:"9px", background:interests.includes(opt.id)?"rgba(200,168,130,0.1)":"rgba(245,239,230,0.02)", border:`1px solid ${interests.includes(opt.id)?C.gold:"rgba(200,168,130,0.15)"}`, borderRadius:"9px", padding:"9px 13px", cursor:"pointer", transition:"all 0.18s", width:"100%", textAlign:"left" }}>
+                    <span style={{ width:"16px", height:"16px", borderRadius:"3px", border:`1.5px solid ${interests.includes(opt.id)?C.gold:"rgba(200,168,130,0.25)"}`, background:interests.includes(opt.id)?C.gold:"transparent", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"9px", color:"#1A1510", flexShrink:0 }}>{interests.includes(opt.id)?"✓":""}</span>
+                    <div>
+                      <p style={{ fontFamily:F.body, fontSize:"13px", color:interests.includes(opt.id)?C.text:C.textDim, margin:"0 0 1px", fontWeight:interests.includes(opt.id)?"500":"400" }}>{opt.icon} {opt.label}</p>
+                      <p style={{ fontFamily:F.body, fontSize:"11px", color:C.textFaint, margin:0 }}>{opt.sub}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+              <GoldBtn onClick={()=>setSaved(true)}>Save my spot ✦</GoldBtn>
+            </>
+          )}
+        </div>
+      ):(
+        <div style={{ width:"100%", background:"rgba(200,168,130,0.08)", border:"1px solid rgba(200,168,130,0.25)", borderRadius:"16px", padding:"20px", marginBottom:"16px", textAlign:"center" }}>
+          <p style={{ fontSize:"22px", marginBottom:"8px" }}>🤍</p>
+          <p style={{ fontFamily:F.display, fontSize:"15px", color:C.text, marginBottom:"6px" }}>You're on the list, {name.split(" ")[0]}.</p>
+          <p style={{ fontFamily:F.body, fontSize:"13px", color:C.textDim, lineHeight:"1.7", margin:0 }}>Kayla will be in touch. Keep coming back in the meantime.</p>
+        </div>
+      )}
+      <GoldBtn onClick={onRestart} outline>Start over</GoldBtn>
+    </div>
+  );
+}
+
+// ─── Root ─────────────────────────────────────────────────────────────────────
+
+const S = { WELCOME:"welcome", INPUT:"input", RESPONSE:"response", V2:"v2", CRISIS:"crisis" };
+
+function App() {
+  const [screen,setScreen]=useState(S.WELCOME);
+  const [data,setData]=useState({});
+
+  return (
+    <div style={{ minHeight:"100vh", background:C.bg, backgroundImage:`radial-gradient(ellipse at 15% 15%, rgba(200,168,130,0.07) 0%, transparent 55%), radial-gradient(ellipse at 85% 85%, rgba(139,110,80,0.05) 0%, transparent 55%)`, position:"relative", overflow:"hidden" }}>
+      <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;1,400&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+      <div style={{ position:"fixed", inset:0, pointerEvents:"none", zIndex:0, opacity:0.02, backgroundImage:`url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")` }}/>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}} @keyframes glow{0%,100%{box-shadow:0 0 40px rgba(200,168,130,0.12)}50%{box-shadow:0 0 80px rgba(200,168,130,0.28)}}`}</style>
+      <div style={{ position:"relative", zIndex:1 }}>
+        {screen===S.WELCOME&&<V1Welcome onStart={()=>setScreen(S.INPUT)}/>}
+        {screen===S.INPUT&&<V1Input onContinue={d=>{ setData(d); setScreen(isCrisis(d.situation)?S.CRISIS:S.RESPONSE); }}/>}
+        {screen===S.CRISIS&&<CrisisScreen onContinue={()=>setScreen(S.RESPONSE)}/>}
+        {screen===S.RESPONSE&&<V1Response data={data} onUpgrade={()=>setScreen(S.V2)} onRestart={()=>{ setData({}); setScreen(S.WELCOME); }}/>}
+        {screen===S.V2&&<V2App initData={data} onFinish={()=>{ setData({}); setScreen(S.WELCOME); }}/>}
+      </div>
+    </div>
+  );
+}
+
+
+ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+</script>
+</body>
+</html>
