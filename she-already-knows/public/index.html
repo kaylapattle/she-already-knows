@@ -423,7 +423,6 @@ SHORT. CONVERSATIONAL. NO HEADERS. NO BULLETS.`;
     const timer=setTimeout(()=>{ setResp(local); setLoading(false); setTimeout(()=>setVis(true),100); },4000);
 
     callClaude([{role:"user",content:prompt}], 600)
-    .then(r=>r.json())
     .then(d=>{
       clearTimeout(timer);
       const text=d?.content?.map(c=>c.text||"").join("").trim();
@@ -641,7 +640,6 @@ BELIEF: "${allLimiting[0]||"I'm not ready"}"
 
     const timer=setTimeout(()=>{ setResp(local); setLoading(false); setTimeout(()=>setVis(true),150); },4500);
     callClaude([{role:"user",content:prompt}], 1100)
-    .then(r=>r.json())
     .then(d2=>{
       clearTimeout(timer);
       const text=d2?.content?.map(c=>c.text||"").join("").trim();
