@@ -420,11 +420,8 @@ STRUCTURE — 3 short paragraphs:
 
 SHORT. CONVERSATIONAL. NO HEADERS. NO BULLETS.`;
 
-    const timer=setTimeout(()=>{ setResp(local); setLoading(false); setTimeout(()=>setVis(true),100); },4000);
-
     callClaude([{role:"user",content:prompt}], 600)
     .then(d=>{
-      clearTimeout(timer);
       const text=d?.content?.map(c=>c.text||"").join("").trim();
       if(text&&text.length>100){
         const paras=text.split("\n").filter(p=>p.trim().length>3);
@@ -433,8 +430,7 @@ SHORT. CONVERSATIONAL. NO HEADERS. NO BULLETS.`;
       } else { setResp(local); }
       setLoading(false); setTimeout(()=>setVis(true),100);
     })
-    .catch(()=>{ clearTimeout(timer); setResp(local); setLoading(false); setTimeout(()=>setVis(true),100); });
-    return ()=>clearTimeout(timer);
+    .catch(()=>{ setResp(local); setLoading(false); setTimeout(()=>setVis(true),100); });
   },[]);
 
   if(loading) return (
@@ -638,10 +634,8 @@ BELIEF: "${allLimiting[0]||"I'm not ready"}"
 ¶4 — BELIEF FLIP: Take "${allLimiting[0]||"I'm not ready"}". Identify the hidden assumption. Flip THAT assumption specifically. Vary tone — observational, direct, or grounding. Do NOT use: "you don't trust yourself" / "the only wrong choice is not choosing."
 ¶5 — ONE MOVE + screenshot sentence.`;
 
-    const timer=setTimeout(()=>{ setResp(local); setLoading(false); setTimeout(()=>setVis(true),150); },4500);
     callClaude([{role:"user",content:prompt}], 1100)
     .then(d2=>{
-      clearTimeout(timer);
       const text=d2?.content?.map(c=>c.text||"").join("").trim();
       if(text&&text.length>200){
         const paras=text.split("\n").filter(p=>p.trim().length>3);
@@ -650,8 +644,7 @@ BELIEF: "${allLimiting[0]||"I'm not ready"}"
       } else { setResp(local); }
       setLoading(false); setTimeout(()=>setVis(true),150);
     })
-    .catch(()=>{ clearTimeout(timer); setResp(local); setLoading(false); setTimeout(()=>setVis(true),150); });
-    return ()=>clearTimeout(timer);
+    .catch(()=>{ setResp(local); setLoading(false); setTimeout(()=>setVis(true),150); });
   },[]);
 
   return (
