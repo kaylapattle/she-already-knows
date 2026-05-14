@@ -23,6 +23,18 @@ button{cursor:pointer;font-family:inherit;border:none;background:none}
 <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/@babel/standalone@7.22.5/babel.min.js"></script>
 <script>
+async function subscribeToFlodesk(firstName, email, segmentId, customFields) {
+  try {
+    await fetch("/.netlify/functions/flodesk", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ firstName, email, segmentId, customFields })
+    });
+  } catch(e) {
+    console.log("Flodesk error:", e.message);
+  }
+}
+
 // Try Netlify function first, fall back to direct API
 async function callClaude(messages, maxTokens) {
   // Try the Netlify function endpoint
@@ -840,7 +852,7 @@ function App() {
       <style>{`@keyframes spin{to{transform:rotate(360deg)}} @keyframes glow{0%,100%{box-shadow:0 0 40px rgba(200,168,130,0.12)}50%{box-shadow:0 0 80px rgba(200,168,130,0.28)}}`}</style>
       <div style={{ position:"relative", zIndex:1 }}>
         {screen===S.WELCOME&&<V1Welcome onStart={()=>setScreen(S.INPUT)}/>}
-        {screen===S.INPUT&&<V1Input onContinue={d=>{ setData(d); setScreen(isCrisis(d.situation)?S.CRISIS:S.RESPONSE); }}/>}
+        {screen===S.INPUT&&<V1Input onContinue={d=>{ setData(d); subscribeToFlodesk(d.name, d.email, "6a04fab1f5ed0a8e82d9beaf"); setScreen(isCrisis(d.situation)?S.CRISIS:S.RESPONSE); }}/>}
         {screen===S.CRISIS&&<CrisisScreen onContinue={()=>setScreen(S.RESPONSE)}/>}
         {screen===S.RESPONSE&&<V1Response data={data} onUpgrade={()=>setScreen(S.V2)} onRestart={()=>{ setData({}); setScreen(S.WELCOME); }}/>}
         {screen===S.V2&&<V2App initData={data} onFinish={()=>{ setData({}); setScreen(S.WELCOME); }}/>}
