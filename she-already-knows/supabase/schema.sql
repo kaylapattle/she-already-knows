@@ -10,8 +10,8 @@ create table if not exists beta_emails (
   added_at   timestamptz not null default now()
 );
 
--- One row per person, keyed by email. Mirrors the Stripe subscription state and
--- tracks the no-card free trial.
+-- One row per person, keyed by email. Mirrors the Stripe subscription state,
+-- including the free-trial window (card is collected up front via Checkout).
 create table if not exists subscribers (
   email                  text primary key,
   name                   text,
