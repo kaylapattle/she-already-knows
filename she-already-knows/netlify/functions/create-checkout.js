@@ -1,4 +1,4 @@
-// Creates a Stripe Checkout session for the $9.99/mo subscription with a free
+// Creates a Stripe Checkout session for the $7.99/mo subscription with a free
 // trial. Card is collected up front; $0 today; first charge on the day the
 // trial ends. Beta members get 30 days, everyone else 7.
 

@@ -8,8 +8,8 @@ tagging + remember-returning-user) are live immediately.
 ## What's included
 - **Return-visit memory** — name/email saved in `localStorage`; returning users skip re-entering them.
 - **Waitlist tagging** — the end-of-V2 "Save my spot" now tags into the Flodesk **waitlist** segment with the selected interests as a custom field.
-- **Free trial — card up front (typical-app model)** — to unlock the deeper work, the user enters their card at Stripe Checkout, is charged **$0 today**, gets a free trial (30 days for beta emails, 7 for everyone else), and is **auto-charged $9.99 on the first day after the trial** unless they cancel. Stripe manages the trial countdown and conversion; Supabase mirrors the status via the webhook.
-- **Stripe Checkout** — $9.99/month subscription with `trial_period_days` set per user.
+- **Free trial — card up front (typical-app model)** — to unlock the deeper work, the user enters their card at Stripe Checkout, is charged **$0 today**, gets a free trial (30 days for beta emails, 7 for everyone else), and is **auto-charged $7.99 on the first day after the trial** unless they cancel. Stripe manages the trial countdown and conversion; Supabase mirrors the status via the webhook.
+- **Stripe Checkout** — $7.99/month subscription with `trial_period_days` set per user.
 - **Stripe webhook** — keeps subscription status (trialing → active → past_due/canceled) in sync.
 - **Paywall UI** — shown to anyone without an active trial/subscription (when enabled); first-timers see "Start your N-day free trial," returners see "Continue."
 
@@ -20,7 +20,7 @@ tagging + remember-returning-user) are live immediately.
 2. Edit `supabase/seed-beta.sql` with the real beta emails (lowercase) and run it → those people get the 30-day trial.
 
 ### 2. Stripe (test mode first)
-1. Create a **Product** "She Already Knows" with a **recurring $9.99/month price** → copy the `price_id`.
+1. Create a **Product** "She Already Knows" with a **recurring $7.99/month price** → copy the `price_id`.
 2. Developers → Webhooks → Add endpoint:
    `https://<your-site>/.netlify/functions/stripe-webhook`
    Events: `checkout.session.completed`, `customer.subscription.created`,
