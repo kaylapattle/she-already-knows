@@ -61,6 +61,35 @@ async function callClaude(messages, maxTokens) {
   }
   throw new Error("All endpoints failed - using template");
 }
+
+// ─── Phase 2 helpers: trial / access / checkout ───────────────────────────────
+async function apiPost(path, body) {
+  const res = await fetch(path, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) throw new Error("Request failed: " + res.status);
+  return res.json();
+}
+function checkAccess(email) {
+  return apiPost("/.netlify/functions/check-access", {email});
+}
+function createCheckout(email, name) {
+  return apiPost("/.netlify/functions/create-checkout", {email, name});
+}
+
+// ─── Return-visit memory: remember name + email locally ───────────────────────
+var SAK_USER_KEY = "sak_user";
+function loadUser() {
+  try { return JSON.parse(localStorage.getItem(SAK_USER_KEY)) || null; } catch(e) { return null; }
+}
+function saveUser(name, email) {
+  try { localStorage.setItem(SAK_USER_KEY, JSON.stringify({name: name, email: email})); } catch(e) {}
+}
+function clearUser() {
+  try { localStorage.removeItem(SAK_USER_KEY); } catch(e) {}
+}
 </script>
 <script type="text/babel">
 const {useState, useEffect} = React;
@@ -74,6 +103,14 @@ const C = {
   red:"rgba(200,90,90,0.7)", redBg:"rgba(200,90,90,0.08)",
 };
 const F = { display:"'Playfair Display', Georgia, serif", body:"'DM Sans', sans-serif" };
+
+// Flodesk segments
+const SEGMENT_APP = "6a04fab1f5ed0a8e82d9beaf";       // "she already knows - app downloads"
+const SEGMENT_WAITLIST = "6a05088681932af3a8dd257c";  // waitlist signups
+
+// Master switch for the Phase 2 paywall. Keep FALSE during beta so members are
+// completely unaffected; flip to TRUE at launch to turn on trials + the paywall.
+const PAYWALL_ENABLED = false;
 
 const CRISIS_KW = ["kill myself","want to die","end my life","suicide","suicidal",
   "self harm","self-harm","hurt myself","not want to be here","don't want to be here",
@@ -359,23 +396,32 @@ function V1Welcome({ onStart }) {
 }
 
 function V1Input({ onContinue }) {
-  const [name,setName]=useState(""); const [email,setEmail]=useState("");
+  const remembered = loadUser();
+  const [name,setName]=useState(remembered?remembered.name:""); const [email,setEmail]=useState(remembered?remembered.email:"");
   const [situation,setSituation]=useState(""); const [feeling,setFeeling]=useState(null);
+  const [editId,setEditId]=useState(!remembered); // show name/email fields only for new visitors
   const canGo = name.trim()&&email.trim()&&email.includes("@")&&situation.trim();
 
   return (
     <div style={{ padding:"48px 24px", maxWidth:"440px", margin:"0 auto" }}>
       <Fade delay={50}>
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"10px", marginBottom:"14px" }}>
-          <div>
-            <label style={{ display:"block", fontFamily:F.body, fontSize:"10px", color:`${C.gold}99`, letterSpacing:"1.5px", textTransform:"uppercase", marginBottom:"7px" }}>Name</label>
-            <InputStyle value={name} onChange={e=>setName(e.target.value)} placeholder="Your name"/>
+        {editId ? (
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"10px", marginBottom:"14px" }}>
+            <div>
+              <label style={{ display:"block", fontFamily:F.body, fontSize:"10px", color:`${C.gold}99`, letterSpacing:"1.5px", textTransform:"uppercase", marginBottom:"7px" }}>Name</label>
+              <InputStyle value={name} onChange={e=>setName(e.target.value)} placeholder="Your name"/>
+            </div>
+            <div>
+              <label style={{ display:"block", fontFamily:F.body, fontSize:"10px", color:`${C.gold}99`, letterSpacing:"1.5px", textTransform:"uppercase", marginBottom:"7px" }}>Email</label>
+              <InputStyle value={email} onChange={e=>setEmail(e.target.value)} placeholder="Your email"/>
+            </div>
           </div>
-          <div>
-            <label style={{ display:"block", fontFamily:F.body, fontSize:"10px", color:`${C.gold}99`, letterSpacing:"1.5px", textTransform:"uppercase", marginBottom:"7px" }}>Email</label>
-            <InputStyle value={email} onChange={e=>setEmail(e.target.value)} placeholder="Your email"/>
+        ) : (
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:"10px", marginBottom:"16px", background:"rgba(245,239,230,0.02)", border:"1px solid rgba(200,168,130,0.15)", borderRadius:"12px", padding:"12px 15px" }}>
+            <p style={{ fontFamily:F.body, fontSize:"13px", color:C.textDim, margin:0 }}>Welcome back, <span style={{color:C.text}}>{name.split(" ")[0]}</span> ✦</p>
+            <button onClick={()=>{ clearUser(); setName(""); setEmail(""); setEditId(true); }} style={{ background:"none", border:"none", color:`${C.gold}99`, fontFamily:F.body, fontSize:"11px", letterSpacing:"0.5px", cursor:"pointer", textDecoration:"underline" }}>Not you?</button>
           </div>
-        </div>
+        )}
         <div style={{ marginBottom:"20px" }}>
           <label style={{ display:"block", fontFamily:F.body, fontSize:"10px", color:`${C.gold}99`, letterSpacing:"1.5px", textTransform:"uppercase", marginBottom:"7px" }}>What decision are you stuck on right now?</label>
           <InputStyle value={situation} onChange={e=>setSituation(e.target.value)} placeholder="Just say it. No fixing, no filtering. Stream of consciousness is perfect." multi/>
@@ -542,14 +588,87 @@ function V2Gate({ name, onUnlock, onBack }) {
   );
 }
 
-const V2S = { GATE:"gate", GOAL:"goal", SPIRAL:"spiral", LIMITING:"limiting", COACH:"coach", BREAKDOWN:"breakdown", DONE:"done" };
+const V2S = { GATE:"gate", CHECKING:"checking", PAYWALL:"paywall", GOAL:"goal", SPIRAL:"spiral", LIMITING:"limiting", COACH:"coach", BREAKDOWN:"breakdown", DONE:"done" };
+
+// ─── Paywall (start free trial / resubscribe) ─────────────────────────────────
+function Paywall({ name, email, trialDays, returning, onBack }) {
+  const [busy,setBusy]=useState(false);
+  const [err,setErr]=useState(null);
+  async function subscribe() {
+    setBusy(true); setErr(null);
+    try {
+      const r = await createCheckout(email, name);
+      if (r && r.url) { window.location.href = r.url; }
+      else throw new Error("No checkout URL");
+    } catch(e) {
+      setErr("Something went wrong starting checkout. Please try again.");
+      setBusy(false);
+    }
+  }
+  const days = trialDays || 7;
+  return (
+    <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", minHeight:"100vh", padding:"40px 24px", textAlign:"center" }}>
+      <Fade delay={80}>
+        <div style={{ fontSize:"32px", marginBottom:"20px" }}>✦</div>
+        <h2 style={{ fontFamily:F.display, fontSize:"28px", fontWeight:"400", color:C.text, marginBottom:"12px", lineHeight:"1.3" }}>
+          {returning ? <>Come back to her,<br/>{name?name.split(" ")[0]:"friend"}.</> : <>The deeper work<br/>is waiting, {name?name.split(" ")[0]:"friend"}.</>}
+        </h2>
+        <p style={{ fontFamily:F.body, fontSize:"14px", color:C.textDim, lineHeight:"1.8", maxWidth:"300px", marginBottom:"24px" }}>
+          {returning
+            ? "Pick up where you left off — unlimited access to your higher self for $9.99/month."
+            : `Start your ${days}-day free trial and keep coming back to her whenever you need to.`}
+        </p>
+        <div style={{ background:"rgba(200,168,130,0.07)", border:"1px solid rgba(200,168,130,0.25)", borderRadius:"16px", padding:"22px", maxWidth:"320px", width:"100%", marginBottom:"16px" }}>
+          <p style={{ fontFamily:F.display, fontSize:"34px", color:C.text, margin:"0 0 2px" }}>$9.99<span style={{ fontFamily:F.body, fontSize:"14px", color:C.textDim }}> / month</span></p>
+          <p style={{ fontFamily:F.body, fontSize:"12px", color:C.textFaint, marginBottom:"18px" }}>
+            {returning ? "Unlimited access · cancel anytime" : `${days} days free, then $9.99/mo · cancel anytime`}
+          </p>
+          <GoldBtn onClick={subscribe} disabled={busy}>{busy?"Opening checkout…":(returning?"Continue with Kayla →":"Start my free trial →")}</GoldBtn>
+          {!returning&&<p style={{ fontFamily:F.body, fontSize:"11px", color:C.textFaint, marginTop:"10px" }}>$0 today. You won't be charged until day {days+1}.</p>}
+          {err&&<p style={{ fontFamily:F.body, fontSize:"12px", color:C.red, marginTop:"12px" }}>{err}</p>}
+        </div>
+        <GoldBtn onClick={onBack} outline>← Not right now</GoldBtn>
+      </Fade>
+    </div>
+  );
+}
+
+function V2Checking() {
+  return (
+    <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", minHeight:"100vh", padding:"40px" }}>
+      <div style={{ width:"30px", height:"30px", borderRadius:"50%", border:"1.5px solid transparent", borderTopColor:C.gold, animation:"spin 1s linear infinite", marginBottom:"18px" }}/>
+      <p style={{ fontFamily:F.display, fontSize:"15px", color:C.textFaint, fontStyle:"italic" }}>One moment…</p>
+    </div>
+  );
+}
 
 function V2App({ initData, onFinish }) {
   const [screen,setScreen]=useState(V2S.GATE);
   const [d,setD]=useState({ goal:"", spirals:[], limiting:[], customBelief:"", showCustom:false });
+  const [gate,setGate]=useState({ trialDays:7, returning:false });
   const go=(s,extra={})=>{ setD(p=>({...p,...extra})); setScreen(s); };
 
-  if(screen===V2S.GATE) return <V2Gate name={initData.name} onUnlock={()=>setScreen(V2S.GOAL)} onBack={onFinish}/>;
+  // Gate the deeper work behind a trial/subscription when the paywall is live.
+  // Card-upfront model: anyone without an active sub/trial goes to Checkout,
+  // which starts their free trial (card collected, $0 today).
+  async function handleUnlock() {
+    if (!PAYWALL_ENABLED) { setScreen(V2S.GOAL); return; }
+    setScreen(V2S.CHECKING);
+    try {
+      const a = await checkAccess(initData.email);
+      if (a.access) { setScreen(V2S.GOAL); return; }
+      setGate({ trialDays: a.trialDays || 7, returning: !!a.hadSubscription });
+      setScreen(V2S.PAYWALL);
+    } catch(e) {
+      // Never block during rollout if the backend hiccups — fail open and log.
+      console.log("Access check failed, allowing through:", e.message);
+      setScreen(V2S.GOAL);
+    }
+  }
+
+  if(screen===V2S.GATE) return <V2Gate name={initData.name} onUnlock={handleUnlock} onBack={onFinish}/>;
+  if(screen===V2S.CHECKING) return <V2Checking/>;
+  if(screen===V2S.PAYWALL) return <Paywall name={initData.name} email={initData.email} trialDays={gate.trialDays} returning={gate.returning} onBack={onFinish}/>;
 
   if(screen===V2S.GOAL) return (
     <div style={{ padding:"48px 24px", maxWidth:"440px", margin:"0 auto" }}>
@@ -605,7 +724,7 @@ function V2App({ initData, onFinish }) {
 
   if(screen===V2S.COACH) return <V2Coach data={{...initData,...d}} onDone={()=>go(V2S.BREAKDOWN)}/>;
   if(screen===V2S.BREAKDOWN) return <V2Breakdown data={{...initData,...d}} onDone={()=>go(V2S.DONE)}/>;
-  if(screen===V2S.DONE) return <V2Done name={initData.name} onRestart={onFinish}/>;
+  if(screen===V2S.DONE) return <V2Done name={initData.name} email={initData.email} onRestart={onFinish}/>;
   return null;
 }
 
@@ -777,7 +896,7 @@ function V2Breakdown({ data, onDone }) {
   );
 }
 
-function V2Done({ name, onRestart }) {
+function V2Done({ name, email, onRestart }) {
   const [v,setV]=useState(false);
   const [joinList,setJoinList]=useState(false);
   const [interests,setInterests]=useState([]);
@@ -790,6 +909,14 @@ function V2Done({ name, onRestart }) {
     {id:"community",icon:"🤝",label:"Accountability community",sub:"Women doing the work together"},
     {id:"coaching",icon:"💬",label:"1:1 or group coaching",sub:"Direct support"},
   ];
+
+  // Tag this subscriber into the separate Flodesk waitlist segment, recording
+  // which offerings she's most interested in as a custom field.
+  function saveWaitlist() {
+    const interestLabels = interests.map(id => (opts.find(o=>o.id===id)||{}).label).filter(Boolean).join(", ");
+    subscribeToFlodesk(name, email, SEGMENT_WAITLIST, interestLabels ? { interests: interestLabels } : undefined);
+    setSaved(true);
+  }
   const toggle=id=>setInterests(p=>p.includes(id)?p.filter(x=>x!==id):[...p,id]);
 
   return (
@@ -821,7 +948,7 @@ function V2Done({ name, onRestart }) {
                   </button>
                 ))}
               </div>
-              <GoldBtn onClick={()=>setSaved(true)}>Save my spot ✦</GoldBtn>
+              <GoldBtn onClick={saveWaitlist}>Save my spot ✦</GoldBtn>
             </>
           )}
         </div>
@@ -844,15 +971,28 @@ const S = { WELCOME:"welcome", INPUT:"input", RESPONSE:"response", V2:"v2", CRIS
 function App() {
   const [screen,setScreen]=useState(S.WELCOME);
   const [data,setData]=useState({});
+  const [checkoutMsg,setCheckoutMsg]=useState(null);
+
+  // Handle the return from Stripe Checkout (?checkout=success|cancel).
+  useEffect(()=>{
+    const params = new URLSearchParams(window.location.search);
+    const result = params.get("checkout");
+    if (result==="success") setCheckoutMsg("You're in. Welcome ✦");
+    else if (result==="cancel") setCheckoutMsg("Checkout cancelled — no charge was made.");
+    if (result) window.history.replaceState({}, "", window.location.pathname);
+  },[]);
 
   return (
     <div style={{ minHeight:"100vh", background:C.bg, backgroundImage:`radial-gradient(ellipse at 15% 15%, rgba(200,168,130,0.07) 0%, transparent 55%), radial-gradient(ellipse at 85% 85%, rgba(139,110,80,0.05) 0%, transparent 55%)`, position:"relative", overflow:"hidden" }}>
       <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;1,400&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
       <div style={{ position:"fixed", inset:0, pointerEvents:"none", zIndex:0, opacity:0.02, backgroundImage:`url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")` }}/>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}} @keyframes glow{0%,100%{box-shadow:0 0 40px rgba(200,168,130,0.12)}50%{box-shadow:0 0 80px rgba(200,168,130,0.28)}}`}</style>
+      {checkoutMsg&&(
+        <div onClick={()=>setCheckoutMsg(null)} style={{ position:"fixed", top:"16px", left:"50%", transform:"translateX(-50%)", zIndex:10, background:"rgba(200,168,130,0.12)", border:`1px solid ${C.gold}`, borderRadius:"100px", padding:"10px 20px", color:C.text, fontFamily:F.body, fontSize:"13px", cursor:"pointer", backdropFilter:"blur(8px)" }}>{checkoutMsg}</div>
+      )}
       <div style={{ position:"relative", zIndex:1 }}>
         {screen===S.WELCOME&&<V1Welcome onStart={()=>setScreen(S.INPUT)}/>}
-        {screen===S.INPUT&&<V1Input onContinue={d=>{ setData(d); subscribeToFlodesk(d.name, d.email, "6a04fab1f5ed0a8e82d9beaf"); setScreen(isCrisis(d.situation)?S.CRISIS:S.RESPONSE); }}/>}
+        {screen===S.INPUT&&<V1Input onContinue={d=>{ setData(d); saveUser(d.name, d.email); subscribeToFlodesk(d.name, d.email, SEGMENT_APP); setScreen(isCrisis(d.situation)?S.CRISIS:S.RESPONSE); }}/>}
         {screen===S.CRISIS&&<CrisisScreen onContinue={()=>setScreen(S.RESPONSE)}/>}
         {screen===S.RESPONSE&&<V1Response data={data} onUpgrade={()=>setScreen(S.V2)} onRestart={()=>{ setData({}); setScreen(S.WELCOME); }}/>}
         {screen===S.V2&&<V2App initData={data} onFinish={()=>{ setData({}); setScreen(S.WELCOME); }}/>}

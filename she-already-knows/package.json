@@ -1,0 +1,10 @@
+{
+  "name": "she-already-knows",
+  "version": "2.0.0",
+  "private": true,
+  "description": "She Already Knows — EntiHERly. Netlify functions for Anthropic, Flodesk, Stripe & Supabase.",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
+    "stripe": "^17.0.0"
+  }
+}
