@@ -1,7 +1,7 @@
 // Returns whether an email currently has access (active sub or live trial).
 // The frontend calls this before letting someone into the premium V2 flow.
 
-const { json, preflight, getSupabase, normEmail, hasAccess, TRIAL_DAYS } = require("./lib/common");
+const { json, preflight, getSupabase, hasAccess, getAuthedEmail, TRIAL_DAYS } = require("./lib/common");
 
 exports.handler = async function (event) {
   const pre = preflight(event);
@@ -9,9 +9,8 @@ exports.handler = async function (event) {
   if (event.httpMethod !== "POST") return json(405, { error: "Method not allowed" });
 
   try {
-    const { email: rawEmail } = JSON.parse(event.body || "{}");
-    const email = normEmail(rawEmail);
-    if (!email || !email.includes("@")) return json(400, { error: "Valid email required" });
+    const email = await getAuthedEmail(event);
+    if (!email) return json(401, { error: "Not authenticated" });
 
     const db = getSupabase();
     const { data: sub, error } = await db

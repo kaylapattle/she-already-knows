@@ -3,7 +3,7 @@
 // trial ends. Beta members get 30 days, everyone else 7.
 
 const Stripe = require("stripe");
-const { json, preflight, getSupabase, normEmail, TRIAL_DAYS } = require("./lib/common");
+const { json, preflight, getSupabase, getAuthedEmail, TRIAL_DAYS } = require("./lib/common");
 
 exports.handler = async function (event) {
   const pre = preflight(event);
@@ -11,9 +11,9 @@ exports.handler = async function (event) {
   if (event.httpMethod !== "POST") return json(405, { error: "Method not allowed" });
 
   try {
-    const { email: rawEmail, name } = JSON.parse(event.body || "{}");
-    const email = normEmail(rawEmail);
-    if (!email || !email.includes("@")) return json(400, { error: "Valid email required" });
+    const email = await getAuthedEmail(event);
+    if (!email) return json(401, { error: "Not authenticated" });
+    const { name } = JSON.parse(event.body || "{}");
 
     const secret = process.env.STRIPE_SECRET_KEY;
     const priceId = process.env.STRIPE_PRICE_ID;

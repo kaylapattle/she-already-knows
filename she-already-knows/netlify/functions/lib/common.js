@@ -5,7 +5,7 @@ const { createClient } = require("@supabase/supabase-js");
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
   "Content-Type": "application/json",
 };
 
@@ -33,6 +33,22 @@ function getSupabase() {
 
 const normEmail = (e) => (e || "").trim().toLowerCase();
 
+// Verify the Supabase Auth JWT from the Authorization header and return the
+// authenticated user's email (lowercased), or null if missing/invalid. This is
+// the source of identity for gated functions — never trust an email from the body.
+async function getAuthedEmail(event) {
+  const header = event.headers.authorization || event.headers.Authorization || "";
+  if (!header.startsWith("Bearer ")) return null;
+  const token = header.slice(7);
+  try {
+    const { data, error } = await getSupabase().auth.getUser(token);
+    if (error || !data || !data.user || !data.user.email) return null;
+    return normEmail(data.user.email);
+  } catch (e) {
+    return null;
+  }
+}
+
 // Single source of truth for "can this person use the premium experience?"
 // A subscriber row is the input; returns true/false.
 function hasAccess(sub) {
@@ -44,4 +60,4 @@ function hasAccess(sub) {
   return false;
 }
 
-module.exports = { CORS, TRIAL_DAYS, json, preflight, getSupabase, normEmail, hasAccess };
+module.exports = { CORS, TRIAL_DAYS, json, preflight, getSupabase, normEmail, hasAccess, getAuthedEmail };

@@ -22,7 +22,22 @@ button{cursor:pointer;font-family:inherit;border:none;background:none}
 <script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/@babel/standalone@7.22.5/babel.min.js"></script>
+<script src="https://unpkg.com/@supabase/supabase-js@2"></script>
 <script>
+// ─── Supabase Auth (passwordless email OTP) ───────────────────────────────────
+// URL + anon key are safe to expose in the browser — RLS protects the tables.
+var SUPABASE_URL = "https://bldxlymaykrsvxfqumrv.supabase.co";
+var SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJsZHhseW1heWtyc3Z4ZnF1bXJ2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxNTQxMTYsImV4cCI6MjA5NzczMDExNn0.LlrSlj851XC4UUbBJx3S_JsSpoOLRzSWXlkfiSorxsg";
+var SB = (window.supabase && window.supabase.createClient)
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  : null;
+
+function authSendCode(email) { return SB.auth.signInWithOtp({ email: email }); }
+function authVerify(email, code) { return SB.auth.verifyOtp({ email: email, token: code, type: "email" }); }
+async function authSession() { if (!SB) return null; var r = await SB.auth.getSession(); return r.data ? r.data.session : null; }
+async function authToken() { var s = await authSession(); return s ? s.access_token : null; }
+async function authSignOut() { if (SB) try { await SB.auth.signOut(); } catch(e) {} }
+
 async function subscribeToFlodesk(firstName, email, segmentId, customFields) {
   try {
     await fetch("/.netlify/functions/flodesk", {
@@ -62,21 +77,25 @@ async function callClaude(messages, maxTokens) {
   throw new Error("All endpoints failed - using template");
 }
 
-// ─── Phase 2 helpers: trial / access / checkout ───────────────────────────────
+// ─── Phase 2 helpers: trial / access / checkout (auth-gated) ───────────────────
 async function apiPost(path, body) {
+  const token = await authToken();
   const res = await fetch(path, {
     method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify(body)
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? {"Authorization": "Bearer " + token} : {})
+    },
+    body: JSON.stringify(body || {})
   });
   if (!res.ok) throw new Error("Request failed: " + res.status);
   return res.json();
 }
-function checkAccess(email) {
-  return apiPost("/.netlify/functions/check-access", {email});
+function checkAccess() {
+  return apiPost("/.netlify/functions/check-access", {});
 }
-function createCheckout(email, name) {
-  return apiPost("/.netlify/functions/create-checkout", {email, name});
+function createCheckout(name) {
+  return apiPost("/.netlify/functions/create-checkout", {name});
 }
 
 // ─── Return-visit memory: remember name + email locally ───────────────────────
@@ -419,7 +438,7 @@ function V1Input({ onContinue }) {
         ) : (
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:"10px", marginBottom:"16px", background:"rgba(245,239,230,0.02)", border:"1px solid rgba(200,168,130,0.15)", borderRadius:"12px", padding:"12px 15px" }}>
             <p style={{ fontFamily:F.body, fontSize:"13px", color:C.textDim, margin:0 }}>Welcome back, <span style={{color:C.text}}>{name.split(" ")[0]}</span> ✦</p>
-            <button onClick={()=>{ clearUser(); setName(""); setEmail(""); setEditId(true); }} style={{ background:"none", border:"none", color:`${C.gold}99`, fontFamily:F.body, fontSize:"11px", letterSpacing:"0.5px", cursor:"pointer", textDecoration:"underline" }}>Not you?</button>
+            <button onClick={()=>{ clearUser(); authSignOut(); setName(""); setEmail(""); setEditId(true); }} style={{ background:"none", border:"none", color:`${C.gold}99`, fontFamily:F.body, fontSize:"11px", letterSpacing:"0.5px", cursor:"pointer", textDecoration:"underline" }}>Not you?</button>
           </div>
         )}
         <div style={{ marginBottom:"20px" }}>
@@ -588,16 +607,74 @@ function V2Gate({ name, onUnlock, onBack }) {
   );
 }
 
-const V2S = { GATE:"gate", CHECKING:"checking", PAYWALL:"paywall", GOAL:"goal", SPIRAL:"spiral", LIMITING:"limiting", COACH:"coach", BREAKDOWN:"breakdown", DONE:"done" };
+const V2S = { GATE:"gate", AUTH:"auth", CHECKING:"checking", PAYWALL:"paywall", GOAL:"goal", SPIRAL:"spiral", LIMITING:"limiting", COACH:"coach", BREAKDOWN:"breakdown", DONE:"done" };
+
+// ─── Account / login (passwordless email code) ────────────────────────────────
+function AuthScreen({ initialEmail, onAuthed, onBack }) {
+  const [email,setEmail]=useState(initialEmail||"");
+  const [stage,setStage]=useState("email");   // email → code
+  const [code,setCode]=useState("");
+  const [busy,setBusy]=useState(false);
+  const [err,setErr]=useState(null);
+
+  async function send() {
+    const e = email.trim();
+    if (!e || !e.includes("@")) { setErr("Please enter a valid email."); return; }
+    setBusy(true); setErr(null);
+    const { error } = await authSendCode(e);
+    setBusy(false);
+    if (error) { setErr(error.message || "Couldn't send the code. Try again."); return; }
+    setStage("code");
+  }
+  async function verify() {
+    setBusy(true); setErr(null);
+    const { error } = await authVerify(email.trim(), code.trim());
+    setBusy(false);
+    if (error) { setErr("That code didn't work. Check it and try again."); return; }
+    onAuthed();
+  }
+
+  return (
+    <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", minHeight:"100vh", padding:"40px 24px", textAlign:"center" }}>
+      <Fade delay={80}>
+        <div style={{ fontSize:"30px", marginBottom:"18px" }}>✦</div>
+        <h2 style={{ fontFamily:F.display, fontSize:"27px", fontWeight:"400", color:C.text, marginBottom:"10px", lineHeight:"1.3" }}>
+          {stage==="email" ? "Create your account" : "Check your email"}
+        </h2>
+        <p style={{ fontFamily:F.body, fontSize:"14px", color:C.textDim, lineHeight:"1.75", maxWidth:"300px", marginBottom:"22px" }}>
+          {stage==="email"
+            ? "No password needed — we'll email you a quick code to continue."
+            : <>We sent a 6-digit code to <span style={{color:C.text}}>{email.trim()}</span>. Enter it below.</>}
+        </p>
+        <div style={{ width:"100%", maxWidth:"320px" }}>
+          {stage==="email" ? (
+            <>
+              <InputStyle value={email} onChange={e=>setEmail(e.target.value)} placeholder="Your email"/>
+              <div style={{marginTop:"12px"}}><GoldBtn onClick={send} disabled={busy}>{busy?"Sending…":"Send me a code →"}</GoldBtn></div>
+            </>
+          ) : (
+            <>
+              <InputStyle value={code} onChange={e=>setCode(e.target.value.replace(/[^0-9]/g,"").slice(0,6))} placeholder="6-digit code"/>
+              <div style={{marginTop:"12px"}}><GoldBtn onClick={verify} disabled={busy||code.length<6}>{busy?"Verifying…":"Verify →"}</GoldBtn></div>
+              <button onClick={send} disabled={busy} style={{ background:"none", border:"none", color:`${C.gold}99`, fontFamily:F.body, fontSize:"12px", marginTop:"12px", cursor:"pointer", textDecoration:"underline" }}>Resend code</button>
+            </>
+          )}
+          {err&&<p style={{ fontFamily:F.body, fontSize:"12px", color:C.red, marginTop:"12px" }}>{err}</p>}
+          <div style={{marginTop:"10px"}}><GoldBtn onClick={onBack} outline>← Back</GoldBtn></div>
+        </div>
+      </Fade>
+    </div>
+  );
+}
 
 // ─── Paywall (start free trial / resubscribe) ─────────────────────────────────
-function Paywall({ name, email, trialDays, returning, onBack }) {
+function Paywall({ name, trialDays, returning, onBack }) {
   const [busy,setBusy]=useState(false);
   const [err,setErr]=useState(null);
   async function subscribe() {
     setBusy(true); setErr(null);
     try {
-      const r = await createCheckout(email, name);
+      const r = await createCheckout(name);
       if (r && r.url) { window.location.href = r.url; }
       else throw new Error("No checkout URL");
     } catch(e) {
@@ -648,14 +725,21 @@ function V2App({ initData, onFinish }) {
   const [gate,setGate]=useState({ trialDays:7, returning:false });
   const go=(s,extra={})=>{ setD(p=>({...p,...extra})); setScreen(s); };
 
-  // Gate the deeper work behind a trial/subscription when the paywall is live.
-  // Card-upfront model: anyone without an active sub/trial goes to Checkout,
+  // Gate the deeper work: require a logged-in account, then a trial/subscription.
+  // Card-upfront model — anyone without an active sub/trial goes to Checkout,
   // which starts their free trial (card collected, $0 today).
   async function handleUnlock() {
     if (!PAYWALL_ENABLED) { setScreen(V2S.GOAL); return; }
     setScreen(V2S.CHECKING);
+    const session = await authSession();
+    if (!session) { setScreen(V2S.AUTH); return; }  // create account / log in first
+    resolveAccess();
+  }
+
+  async function resolveAccess() {
+    setScreen(V2S.CHECKING);
     try {
-      const a = await checkAccess(initData.email);
+      const a = await checkAccess();
       if (a.access) { setScreen(V2S.GOAL); return; }
       setGate({ trialDays: a.trialDays || 7, returning: !!a.hadSubscription });
       setScreen(V2S.PAYWALL);
@@ -667,8 +751,9 @@ function V2App({ initData, onFinish }) {
   }
 
   if(screen===V2S.GATE) return <V2Gate name={initData.name} onUnlock={handleUnlock} onBack={onFinish}/>;
+  if(screen===V2S.AUTH) return <AuthScreen initialEmail={initData.email} onAuthed={resolveAccess} onBack={onFinish}/>;
   if(screen===V2S.CHECKING) return <V2Checking/>;
-  if(screen===V2S.PAYWALL) return <Paywall name={initData.name} email={initData.email} trialDays={gate.trialDays} returning={gate.returning} onBack={onFinish}/>;
+  if(screen===V2S.PAYWALL) return <Paywall name={initData.name} trialDays={gate.trialDays} returning={gate.returning} onBack={onFinish}/>;
 
   if(screen===V2S.GOAL) return (
     <div style={{ padding:"48px 24px", maxWidth:"440px", margin:"0 auto" }}>
