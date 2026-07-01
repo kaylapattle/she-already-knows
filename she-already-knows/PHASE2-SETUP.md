@@ -1,7 +1,7 @@
 # Phase 2 — Paywall, Stripe, Supabase & add-ons
 
 Everything for Phase 2 lives on the `phase-2-paywall` branch. It ships **safe by
-default**: the paywall is OFF (`PAYWALL_ENABLED = false` in `public/index.html`),
+default**: the paywall is OFF (`PAYWALL_LAUNCH = false` in `public/index.html`),
 so deploying this changes nothing for beta members. The two add-ons (waitlist
 tagging + remember-returning-user) are live immediately.
 
@@ -42,9 +42,16 @@ STRIPE_WEBHOOK_SECRET   = whsec_…
 ```
 `ANTHROPIC_API_KEY` and `FLODESK_API_KEY` are already set from earlier phases.
 
+## Testing in test mode (before launch)
+Production (`main`) stays `PAYWALL_LAUNCH = false`, so the paywall is off there. To
+test the full flow on the **branch preview** without changing that, append
+**`?paywall=1`** to the preview URL — that turns the paywall on for your session only.
+Use Stripe **test** keys + the test price, and Stripe **test cards** (e.g. `4242 4242 4242 4242`,
+any future expiry / any CVC). Test price id: `price_1Tmg36ImjfHJhPePH3Z1BxpI`.
+
 ## Going live (after beta ends)
 1. Swap Stripe test keys → live keys; recreate the Product/price + webhook in live mode and update the env vars.
-2. Set `PAYWALL_ENABLED = true` in `public/index.html`.
+2. Set `PAYWALL_LAUNCH = true` in `public/index.html`.
 3. Merge `phase-2-paywall` → `main`. Netlify auto-deploys.
 
 Beta members are grandfathered automatically — seed their emails into `beta_emails`
