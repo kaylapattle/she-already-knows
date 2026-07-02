@@ -649,7 +649,7 @@ function AuthScreen({ initialEmail, onAuthed, onBack }) {
         <p style={{ fontFamily:F.body, fontSize:"14px", color:C.textDim, lineHeight:"1.75", maxWidth:"300px", marginBottom:"22px" }}>
           {stage==="email"
             ? "No password needed — we'll email you a quick code to continue."
-            : <>We sent a 6-digit code to <span style={{color:C.text}}>{email.trim()}</span>. Enter it below.</>}
+            : <>We sent a login code to <span style={{color:C.text}}>{email.trim()}</span>. Enter it below.</>}
         </p>
         <div style={{ width:"100%", maxWidth:"320px" }}>
           {stage==="email" ? (
@@ -659,7 +659,7 @@ function AuthScreen({ initialEmail, onAuthed, onBack }) {
             </>
           ) : (
             <>
-              <InputStyle value={code} onChange={e=>setCode(e.target.value.replace(/[^0-9]/g,"").slice(0,6))} placeholder="6-digit code"/>
+              <InputStyle value={code} onChange={e=>setCode(e.target.value.replace(/[^0-9]/g,"").slice(0,8))} placeholder="Enter your code"/>
               <div style={{marginTop:"12px"}}><GoldBtn onClick={verify} disabled={busy||code.length<6}>{busy?"Verifying…":"Verify →"}</GoldBtn></div>
               <button onClick={send} disabled={busy} style={{ background:"none", border:"none", color:`${C.gold}99`, fontFamily:F.body, fontSize:"12px", marginTop:"12px", cursor:"pointer", textDecoration:"underline" }}>Resend code</button>
             </>
