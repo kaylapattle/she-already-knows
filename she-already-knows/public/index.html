@@ -127,10 +127,11 @@ const F = { display:"'Playfair Display', Georgia, serif", body:"'DM Sans', sans-
 const SEGMENT_APP = "6a04fab1f5ed0a8e82d9beaf";       // "she already knows - app downloads"
 const SEGMENT_WAITLIST = "6a05088681932af3a8dd257c";  // waitlist signups
 
-// Master switch for the Phase 2 paywall. Keep FALSE so production is unaffected;
-// flip to TRUE at launch. For test-mode verification on the branch preview, add
-// ?paywall=1 to the URL to turn it on without changing this default.
-const PAYWALL_LAUNCH = false;
+// Master switch for the Phase 2 paywall. TRUE on the phase-2-paywall branch so the
+// preview always shows the paywall for testing (and this is the launch value).
+// Production (main) keeps its own value and stays unaffected until we merge at launch.
+// ?paywall=1 in the URL can also force it on regardless.
+const PAYWALL_LAUNCH = true;
 const PAYWALL_ENABLED = (function(){
   try { if (new URLSearchParams(window.location.search).get("paywall") === "1") return true; } catch(e) {}
   return PAYWALL_LAUNCH;
