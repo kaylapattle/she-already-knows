@@ -50,7 +50,7 @@ Use Stripe **test** keys + the test price, and Stripe **test cards** (e.g. `4242
 any future expiry / any CVC). Test price id: `price_1Tmg36ImjfHJhPePH3Z1BxpI`.
 
 ## Going live (after beta ends)
-1. Swap Stripe test keys → live keys; recreate the Product/price + webhook in live mode and update the env vars.
+1. Swap Stripe test keys → live keys; recreate the Product/price + webhook in live mode and update the env vars. Also create a **live Customer Portal configuration** (Stripe → Settings → Billing → Customer portal → activate, enabling cancel + payment-method update + invoice history) so the "Manage subscription" link works in live mode.
 2. Set `PAYWALL_LAUNCH = true` in `public/index.html`.
 3. Merge `phase-2-paywall` → `main`. Netlify auto-deploys.
 
