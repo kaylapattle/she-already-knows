@@ -38,6 +38,18 @@ async function authSession() { if (!SB) return null; var r = await SB.auth.getSe
 async function authToken() { var s = await authSession(); return s ? s.access_token : null; }
 async function authSignOut() { if (SB) try { await SB.auth.signOut(); } catch(e) {} }
 
+// ─── 30-day auto-logout: sign out if the app hasn't been opened in 30 days ─────
+var SAK_ACTIVE_KEY = "sak_last_active";
+var SAK_MAX_IDLE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+function enforceIdleLogout() {
+  try {
+    var last = parseInt(localStorage.getItem(SAK_ACTIVE_KEY) || "0", 10);
+    if (last && (Date.now() - last) > SAK_MAX_IDLE_MS) { authSignOut(); }
+    localStorage.setItem(SAK_ACTIVE_KEY, String(Date.now()));
+  } catch(e) {}
+}
+enforceIdleLogout();
+
 async function subscribeToFlodesk(firstName, email, segmentId, customFields) {
   try {
     await fetch("/.netlify/functions/flodesk", {
@@ -96,6 +108,9 @@ function checkAccess() {
 }
 function createCheckout(name) {
   return apiPost("/.netlify/functions/create-checkout", {name});
+}
+function createPortalSession() {
+  return apiPost("/.netlify/functions/create-portal-session", {});
 }
 
 // ─── Return-visit memory: remember name + email locally ───────────────────────
@@ -425,6 +440,9 @@ function V1Input({ onContinue }) {
   const [name,setName]=useState(remembered?remembered.name:""); const [email,setEmail]=useState(remembered?remembered.email:"");
   const [situation,setSituation]=useState(""); const [feeling,setFeeling]=useState(null);
   const [editId,setEditId]=useState(!remembered); // show name/email fields only for new visitors
+  const [loggedIn,setLoggedIn]=useState(false);
+  useEffect(()=>{ authSession().then(s=>setLoggedIn(!!s)); },[]);
+  async function manage() { try { const r=await createPortalSession(); if(r&&r.url) window.location.href=r.url; } catch(e) {} }
   const canGo = name.trim()&&email.trim()&&email.includes("@")&&situation.trim();
 
   return (
@@ -463,6 +481,7 @@ function V1Input({ onContinue }) {
         </div>
         <GoldBtn onClick={()=>canGo&&onContinue({name:name.trim(),email:email.trim(),situation,feeling})} disabled={!canGo}>Ask her →</GoldBtn>
         <p style={{ fontFamily:F.body, fontSize:"11px", color:C.textFaint, textAlign:"center", marginTop:"10px" }}>No spam. Just Kayla, when it matters.</p>
+        {loggedIn && <p style={{ textAlign:"center", marginTop:"16px" }}><button onClick={manage} style={{ background:"none", border:"none", color:`${C.gold}88`, fontFamily:F.body, fontSize:"11px", letterSpacing:"0.5px", cursor:"pointer", textDecoration:"underline" }}>Manage subscription</button></p>}
       </Fade>
     </div>
   );
