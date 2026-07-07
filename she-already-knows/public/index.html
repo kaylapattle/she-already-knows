@@ -124,6 +124,14 @@ function saveUser(name, email) {
 function clearUser() {
   try { localStorage.removeItem(SAK_USER_KEY); } catch(e) {}
 }
+
+// ─── One-time free preview: mark once they've seen a free response ─────────────
+function hasPreviewed() {
+  try { return localStorage.getItem("sak_previewed") === "1"; } catch(e) { return false; }
+}
+function markPreviewed() {
+  try { localStorage.setItem("sak_previewed", "1"); } catch(e) {}
+}
 </script>
 <script type="text/babel">
 const {useState, useEffect} = React;
@@ -491,6 +499,7 @@ function V1Response({ data, onUpgrade, onRestart }) {
   const [resp,setResp]=useState(null); const [loading,setLoading]=useState(true); const [vis,setVis]=useState(false);
 
   useEffect(()=>{
+    markPreviewed(); // they've now used their free preview
     const local = buildInstantResponse(data.name, data.situation, data.feeling);
     const feelingLabel = data.feeling ? FEELINGS.find(f=>f.id===data.feeling)?.label : "not specified";
 
@@ -1074,9 +1083,42 @@ function V2Done({ name, email, onRestart }) {
   );
 }
 
+// ─── Preview gate: shown when a returning visitor has used their free preview ──
+// Reuses the account/login + paywall. Subscribers pass straight through; others
+// are asked to start the trial.
+function PreviewGate({ initData, onUnlocked, onBack }) {
+  const [screen,setScreen]=useState("checking"); // checking | auth | paywall
+  const [gate,setGate]=useState({ trialDays:7, returning:false });
+
+  useEffect(()=>{ start(); },[]);
+  async function start() {
+    setScreen("checking");
+    const session = await authSession();
+    if (!session) { setScreen("auth"); return; }
+    resolve();
+  }
+  async function resolve() {
+    setScreen("checking");
+    try {
+      const a = await checkAccess();
+      if (a.access) { onUnlocked(); return; }   // active subscriber → let them through
+      setGate({ trialDays: a.trialDays || 7, returning: !!a.hadSubscription });
+      setScreen("paywall");
+    } catch(e) {
+      console.log("Preview access check failed, allowing through:", e.message);
+      onUnlocked(); // fail open during rollout
+    }
+  }
+
+  if(screen==="checking") return <V2Checking/>;
+  if(screen==="auth") return <AuthScreen initialEmail={initData.email} onAuthed={resolve} onBack={onBack}/>;
+  if(screen==="paywall") return <Paywall name={initData.name} trialDays={gate.trialDays} returning={gate.returning} onBack={onBack}/>;
+  return null;
+}
+
 // ─── Root ─────────────────────────────────────────────────────────────────────
 
-const S = { WELCOME:"welcome", INPUT:"input", RESPONSE:"response", V2:"v2", CRISIS:"crisis" };
+const S = { WELCOME:"welcome", INPUT:"input", RESPONSE:"response", V2:"v2", CRISIS:"crisis", PREVIEW_GATE:"preview_gate" };
 
 function App() {
   const [screen,setScreen]=useState(S.WELCOME);
@@ -1102,8 +1144,9 @@ function App() {
       )}
       <div style={{ position:"relative", zIndex:1 }}>
         {screen===S.WELCOME&&<V1Welcome onStart={()=>setScreen(S.INPUT)}/>}
-        {screen===S.INPUT&&<V1Input onContinue={d=>{ setData(d); saveUser(d.name, d.email); subscribeToFlodesk(d.name, d.email, SEGMENT_APP); setScreen(isCrisis(d.situation)?S.CRISIS:S.RESPONSE); }}/>}
+        {screen===S.INPUT&&<V1Input onContinue={d=>{ setData(d); saveUser(d.name, d.email); subscribeToFlodesk(d.name, d.email, SEGMENT_APP); setScreen(isCrisis(d.situation)?S.CRISIS:((PAYWALL_ENABLED&&hasPreviewed())?S.PREVIEW_GATE:S.RESPONSE)); }}/>}
         {screen===S.CRISIS&&<CrisisScreen onContinue={()=>setScreen(S.RESPONSE)}/>}
+        {screen===S.PREVIEW_GATE&&<PreviewGate initData={data} onUnlocked={()=>setScreen(S.RESPONSE)} onBack={()=>{ setData({}); setScreen(S.WELCOME); }}/>}
         {screen===S.RESPONSE&&<V1Response data={data} onUpgrade={()=>setScreen(S.V2)} onRestart={()=>{ setData({}); setScreen(S.WELCOME); }}/>}
         {screen===S.V2&&<V2App initData={data} onFinish={()=>{ setData({}); setScreen(S.WELCOME); }}/>}
       </div>
