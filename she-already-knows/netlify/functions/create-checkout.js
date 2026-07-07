@@ -50,6 +50,9 @@ exports.handler = async function (event) {
       client_reference_id: email,
       line_items: [{ price: priceId, quantity: 1 }],
       allow_promotion_codes: true,
+      // Require customers to accept the Terms of Service (URL configured in
+      // Stripe → Settings → Checkout) before subscribing.
+      consent_collection: { terms_of_service: "required" },
       // Collect the card even though today's charge is $0, so billing converts
       // automatically when the trial ends.
       payment_method_collection: "always",
