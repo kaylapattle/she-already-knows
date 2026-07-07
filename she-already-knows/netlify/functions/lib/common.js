@@ -60,4 +60,21 @@ function hasAccess(sub) {
   return false;
 }
 
-module.exports = { CORS, TRIAL_DAYS, json, preflight, getSupabase, normEmail, hasAccess, getAuthedEmail };
+// Add/upsert a subscriber into a Flodesk segment (used to fire welcome emails
+// when someone starts a paid subscription). Best-effort — never throws.
+async function addToFlodesk(email, firstName, segmentId) {
+  const apiKey = process.env.FLODESK_API_KEY;
+  if (!apiKey || !email || !segmentId) return;
+  try {
+    const auth = "Basic " + Buffer.from(apiKey + ":").toString("base64");
+    await fetch("https://api.flodesk.com/v1/subscribers", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": auth },
+      body: JSON.stringify({ email, first_name: firstName || "", segment_ids: [segmentId] }),
+    });
+  } catch (e) {
+    console.error("addToFlodesk error:", e.message);
+  }
+}
+
+module.exports = { CORS, TRIAL_DAYS, json, preflight, getSupabase, normEmail, hasAccess, getAuthedEmail, addToFlodesk };

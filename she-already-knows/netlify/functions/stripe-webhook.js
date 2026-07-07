@@ -4,7 +4,10 @@
 // and put the signing secret in STRIPE_WEBHOOK_SECRET.
 
 const Stripe = require("stripe");
-const { getSupabase, normEmail } = require("./lib/common");
+const { getSupabase, normEmail, addToFlodesk } = require("./lib/common");
+
+// Flodesk segment for paid subscribers (fires the welcome email).
+const SUBSCRIBERS_SEGMENT = "6a4d53b57abe5072c2a61df1";
 
 // Map Stripe's subscription.status to our smaller enum.
 function mapStatus(s) {
@@ -64,6 +67,10 @@ exports.handler = async function (event) {
           const sub = await stripe.subscriptions.retrieve(obj.subscription);
           await upsertFromSubscription(db, sub, email);
         }
+        // Add the new subscriber to the Flodesk "subscribers" segment so the
+        // welcome email fires.
+        const fullName = obj.customer_details && obj.customer_details.name;
+        await addToFlodesk(normEmail(email), fullName ? fullName.split(" ")[0] : "", SUBSCRIBERS_SEGMENT);
         break;
       }
       case "customer.subscription.created":
