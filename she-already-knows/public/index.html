@@ -678,7 +678,7 @@ function AuthScreen({ initialEmail, onAuthed, onBack }) {
         <p style={{ fontFamily:F.body, fontSize:"14px", color:C.textDim, lineHeight:"1.75", maxWidth:"300px", marginBottom:"22px" }}>
           {stage==="email"
             ? "No password needed — we'll email you a quick code to continue."
-            : <>We sent a login code to <span style={{color:C.text}}>{email.trim()}</span>. Enter it below.</>}
+            : <>We sent a login code to <span style={{color:C.text}}>{email.trim()}</span>. Enter it below — <span style={{color:`${C.gold}cc`}}>check your spam/junk folder</span> if it's not in your inbox.</>}
         </p>
         <div style={{ width:"100%", maxWidth:"320px" }}>
           {stage==="email" ? (
