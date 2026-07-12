@@ -29,12 +29,24 @@ exports.handler = async function (event) {
     const { data: beta } = await db
       .from("beta_emails").select("email").eq("email", email).maybeSingle();
     const isBeta = sub ? sub.is_beta : !!beta;
-    const hadSubscription = !!(sub && sub.stripe_subscription_id);
+
+    // Reuse the stored Stripe customer only if it actually exists in the CURRENT
+    // Stripe mode — test and live share this Supabase, so a stored id may be from
+    // the other mode (which would break checkout). If it's stale, start fresh.
+    let customerId = sub && sub.stripe_customer_id;
+    let validStored = false;
+    if (customerId) {
+      try {
+        const existing = await stripe.customers.retrieve(customerId);
+        validStored = !existing.deleted;
+      } catch (e) { validStored = false; }
+    }
+    if (!validStored) customerId = null;
+
+    // Only skip the free trial if they have a VALID prior subscription in this mode.
+    const hadSubscription = validStored && !!(sub && sub.stripe_subscription_id);
     const trialDays = hadSubscription ? 0 : (isBeta ? TRIAL_DAYS.beta : TRIAL_DAYS.new);
 
-    // Reuse the Stripe customer if we already have one, so a person never ends
-    // up with duplicate customers / subscriptions.
-    let customerId = sub && sub.stripe_customer_id;
     if (!customerId) {
       const customer = await stripe.customers.create({ email, name: name || undefined, metadata: { email } });
       customerId = customer.id;
