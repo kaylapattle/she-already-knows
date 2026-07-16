@@ -589,10 +589,10 @@ SHORT. CONVERSATIONAL. NO HEADERS. NO BULLETS.`;
         </p>
 
         <div style={{ background:"rgba(200,168,130,0.07)", border:"1px solid rgba(200,168,130,0.22)", borderRadius:"16px", padding:"20px", marginBottom:"12px" }}>
-          <p style={{ fontFamily:F.display, fontSize:"15px", color:C.text, marginBottom:"8px", lineHeight:"1.3" }}>Want the full pattern breakdown?</p>
-          <p style={{ fontFamily:F.body, fontSize:"13px", color:C.textDim, lineHeight:"1.7", marginBottom:"16px" }}>Understand exactly why you keep ending up here, and get the tools to stop — with unlimited conversations whenever you need her.</p>
-          <GoldBtn onClick={onUpgrade}>Start my 7-day free trial →</GoldBtn>
-          <p style={{ fontFamily:F.body, fontSize:"11px", color:C.textFaint, textAlign:"center", marginTop:"10px" }}>$0 today · cancel anytime</p>
+          <p style={{ fontFamily:F.display, fontSize:"15px", color:C.text, marginBottom:"8px", lineHeight:"1.3" }}>If this helped you hear yourself more clearly...</p>
+          <p style={{ fontFamily:F.body, fontSize:"13px", color:C.textDim, lineHeight:"1.7", marginBottom:"16px" }}>The first conversation is often just the beginning. Create your account to continue the conversation.</p>
+          <GoldBtn onClick={onUpgrade}>Continue the Conversation →</GoldBtn>
+          <p style={{ fontFamily:F.body, fontSize:"11px", color:C.textFaint, textAlign:"center", marginTop:"10px" }}>Your 7-day free trial begins after you create your account.<br/>$7.99/month after your trial · cancel anytime.</p>
         </div>
         <GoldBtn onClick={onRestart} outline>Start over</GoldBtn>
       </Fade>
@@ -764,11 +764,23 @@ function V2App({ initData, onFinish }) {
       const a = await checkAccess();
       if (a.access) { setScreen(V2S.GOAL); return; }
       setGate({ trialDays: a.trialDays || 7, returning: !!a.hadSubscription });
-      setScreen(V2S.PAYWALL);
+      startCheckout(); // skip the paywall confirmation screen — straight to Stripe
     } catch(e) {
       // Never block during rollout if the backend hiccups — fail open and log.
       console.log("Access check failed, allowing through:", e.message);
       setScreen(V2S.GOAL);
+    }
+  }
+
+  async function startCheckout() {
+    setScreen(V2S.CHECKING);
+    try {
+      const r = await createCheckout(initData.name);
+      if (r && r.url) { window.location.href = r.url; return; }
+      throw new Error("No checkout URL");
+    } catch(e) {
+      // Fall back to the paywall screen so they can see what happened and retry.
+      setScreen(V2S.PAYWALL);
     }
   }
 
