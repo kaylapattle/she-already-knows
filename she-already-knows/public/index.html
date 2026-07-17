@@ -498,15 +498,27 @@ function V1Input({ onContinue }) {
 function V1Response({ data, onUpgrade, onRestart }) {
   const [resp,setResp]=useState(null); const [loading,setLoading]=useState(true); const [vis,setVis]=useState(false);
   const [isSubscriber,setIsSubscriber]=useState(false);
+  // Gates rendering so the CTA copy never flashes the wrong version while the
+  // access check is still in flight. Defaults true when the paywall is off.
+  const [accessChecked,setAccessChecked]=useState(!PAYWALL_ENABLED);
 
   // If they already have an active trial/subscription, the CTA copy shouldn't
   // pitch them on creating an account / starting a trial they already have.
   useEffect(()=>{
     if (!PAYWALL_ENABLED) return;
-    authSession().then(session => {
-      if (!session) return;
-      checkAccess().then(a => { if (a.access) setIsSubscriber(true); }).catch(()=>{});
-    }).catch(()=>{});
+    let done = false;
+    const finish = (sub) => { if (done) return; done = true; if (sub) setIsSubscriber(true); setAccessChecked(true); };
+    (async () => {
+      try {
+        const session = await authSession();
+        if (!session) { finish(false); return; }
+        const a = await checkAccess();
+        finish(!!a.access);
+      } catch(e) { finish(false); }
+    })();
+    // Safety net: never let a slow/stuck access check block the free response.
+    const t = setTimeout(() => finish(false), 4000);
+    return () => clearTimeout(t);
   },[]);
 
   useEffect(()=>{
@@ -555,7 +567,7 @@ SHORT. CONVERSATIONAL. NO HEADERS. NO BULLETS.`;
     .catch(()=>{ setResp(local); setLoading(false); setTimeout(()=>setVis(true),100); });
   },[]);
 
-  if(loading) return (
+  if(loading || !accessChecked) return (
     <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", minHeight:"100vh", padding:"40px" }}>
       <div style={{ width:"32px", height:"32px", borderRadius:"50%", border:"1.5px solid transparent", borderTopColor:C.gold, animation:"spin 1s linear infinite", marginBottom:"20px" }}/>
       <p style={{ fontFamily:F.display, fontSize:"16px", color:C.textFaint, fontStyle:"italic" }}>She's sitting with what you shared...</p>
