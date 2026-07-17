@@ -497,6 +497,17 @@ function V1Input({ onContinue }) {
 
 function V1Response({ data, onUpgrade, onRestart }) {
   const [resp,setResp]=useState(null); const [loading,setLoading]=useState(true); const [vis,setVis]=useState(false);
+  const [isSubscriber,setIsSubscriber]=useState(false);
+
+  // If they already have an active trial/subscription, the CTA copy shouldn't
+  // pitch them on creating an account / starting a trial they already have.
+  useEffect(()=>{
+    if (!PAYWALL_ENABLED) return;
+    authSession().then(session => {
+      if (!session) return;
+      checkAccess().then(a => { if (a.access) setIsSubscriber(true); }).catch(()=>{});
+    }).catch(()=>{});
+  },[]);
 
   useEffect(()=>{
     markPreviewed(); // they've now used their free preview
@@ -589,10 +600,20 @@ SHORT. CONVERSATIONAL. NO HEADERS. NO BULLETS.`;
         </p>
 
         <div style={{ background:"rgba(200,168,130,0.07)", border:"1px solid rgba(200,168,130,0.22)", borderRadius:"16px", padding:"20px", marginBottom:"12px" }}>
-          <p style={{ fontFamily:F.display, fontSize:"15px", color:C.text, marginBottom:"8px", lineHeight:"1.3" }}>If this helped you hear yourself more clearly...</p>
-          <p style={{ fontFamily:F.body, fontSize:"13px", color:C.textDim, lineHeight:"1.7", marginBottom:"16px" }}>The first conversation is often just the beginning. Create your account to continue the conversation.</p>
-          <GoldBtn onClick={onUpgrade}>Continue the Conversation →</GoldBtn>
-          <p style={{ fontFamily:F.body, fontSize:"11px", color:C.textFaint, textAlign:"center", marginTop:"10px" }}>Your 7-day free trial begins after you create your account.<br/>$7.99/month after your trial · cancel anytime.</p>
+          {isSubscriber ? (
+            <>
+              <p style={{ fontFamily:F.display, fontSize:"15px", color:C.text, marginBottom:"8px", lineHeight:"1.3" }}>Ready to go deeper?</p>
+              <p style={{ fontFamily:F.body, fontSize:"13px", color:C.textDim, lineHeight:"1.7", marginBottom:"16px" }}>Continue the conversation — this is included with your membership.</p>
+              <GoldBtn onClick={onUpgrade}>Continue the Conversation →</GoldBtn>
+            </>
+          ) : (
+            <>
+              <p style={{ fontFamily:F.display, fontSize:"15px", color:C.text, marginBottom:"8px", lineHeight:"1.3" }}>If this helped you hear yourself more clearly...</p>
+              <p style={{ fontFamily:F.body, fontSize:"13px", color:C.textDim, lineHeight:"1.7", marginBottom:"16px" }}>The first conversation is often just the beginning. Create your account to continue the conversation.</p>
+              <GoldBtn onClick={onUpgrade}>Continue the Conversation →</GoldBtn>
+              <p style={{ fontFamily:F.body, fontSize:"11px", color:C.textFaint, textAlign:"center", marginTop:"10px" }}>Your 7-day free trial begins after you create your account.<br/>$7.99/month after your trial · cancel anytime.</p>
+            </>
+          )}
         </div>
         <GoldBtn onClick={onRestart} outline>Start over</GoldBtn>
       </Fade>
