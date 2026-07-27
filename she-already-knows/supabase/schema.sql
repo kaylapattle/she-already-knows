@@ -29,6 +29,16 @@ create table if not exists subscribers (
 create index if not exists subscribers_customer_idx
   on subscribers (stripe_customer_id);
 
+-- Founding-member prompt (shown right after checkout completes).
+alter table subscribers add column if not exists founding_member_status text; -- 'yes' | 'maybe_later' | null
+alter table subscribers add column if not exists founding_member_handle text; -- social handle, only if 'yes'
+
+-- Cancellation survey (mandatory reason + explanation + follow-up consent).
+alter table subscribers add column if not exists cancel_reason text;
+alter table subscribers add column if not exists cancel_feedback text;
+alter table subscribers add column if not exists cancel_followup_ok boolean;
+alter table subscribers add column if not exists cancel_handle text;
+
 -- Keep updated_at fresh on every write.
 create or replace function set_updated_at()
 returns trigger as $$

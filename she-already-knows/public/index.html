@@ -112,6 +112,9 @@ function createCheckout(name) {
 function createPortalSession() {
   return apiPost("/.netlify/functions/create-portal-session", {});
 }
+function saveFoundingMember(response, handle) {
+  return apiPost("/.netlify/functions/save-founding-member", {response, handle});
+}
 
 // ─── Return-visit memory: remember name + email locally ───────────────────────
 var SAK_USER_KEY = "sak_user";
@@ -1169,9 +1172,54 @@ function PreviewGate({ initData, onUnlocked, onBack }) {
   return null;
 }
 
+// ─── Founding member prompt (shown right after checkout completes) ────────────
+function FoundingMemberPrompt({ onDone }) {
+  const [choice,setChoice]=useState(null); // null | "yes" | "maybe_later"
+  const [handle,setHandle]=useState("");
+  const [busy,setBusy]=useState(false);
+
+  async function respond(selected) {
+    if (selected === "maybe_later") {
+      setBusy(true);
+      try { await saveFoundingMember("maybe_later", null); } catch(e) {}
+      setBusy(false); onDone(); return;
+    }
+    setChoice("yes"); // reveal the handle field, wait for Continue
+  }
+
+  async function finish() {
+    setBusy(true);
+    try { await saveFoundingMember("yes", handle.trim() || null); } catch(e) {}
+    setBusy(false); onDone();
+  }
+
+  return (
+    <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", minHeight:"100vh", padding:"40px 24px", textAlign:"center" }}>
+      <Fade delay={80}>
+        <div style={{ fontSize:"30px", marginBottom:"18px" }}>✦</div>
+        <h2 style={{ fontFamily:F.display, fontSize:"26px", fontWeight:"400", color:C.text, marginBottom:"12px", lineHeight:"1.3" }}>We'd love to build this with you.</h2>
+        <p style={{ fontFamily:F.body, fontSize:"14px", color:C.textDim, lineHeight:"1.75", maxWidth:"310px", marginBottom:"28px" }}>Would you like to become a founding member? I'd occasionally love to ask what you're noticing and invite you to test new features.</p>
+        <div style={{ width:"100%", maxWidth:"320px" }}>
+          {choice!=="yes" ? (
+            <>
+              <GoldBtn onClick={()=>respond("yes")} disabled={busy}>Yes, I'm in →</GoldBtn>
+              <div style={{marginTop:"10px"}}><GoldBtn onClick={()=>respond("maybe_later")} outline disabled={busy}>Maybe later</GoldBtn></div>
+            </>
+          ) : (
+            <>
+              <InputStyle value={handle} onChange={e=>setHandle(e.target.value)} placeholder="Your social handle (optional)"/>
+              <div style={{marginTop:"12px"}}><GoldBtn onClick={finish} disabled={busy}>{busy?"Saving…":"Continue →"}</GoldBtn></div>
+            </>
+          )}
+        </div>
+      </Fade>
+    </div>
+  );
+}
+
 // ─── Root ─────────────────────────────────────────────────────────────────────
 
-const S = { WELCOME:"welcome", INPUT:"input", RESPONSE:"response", V2:"v2", CRISIS:"crisis", PREVIEW_GATE:"preview_gate" };
+const S = { WELCOME:"welcome", INPUT:"input", RESPONSE:"response", V2:"v2", CRISIS:"crisis", PREVIEW_GATE:"preview_gate", FOUNDING_MEMBER:"founding_member" };
 
 function App() {
   const [screen,setScreen]=useState(S.WELCOME);
@@ -1182,7 +1230,7 @@ function App() {
   useEffect(()=>{
     const params = new URLSearchParams(window.location.search);
     const result = params.get("checkout");
-    if (result==="success") setCheckoutMsg("You're in. Welcome ✦");
+    if (result==="success") { setCheckoutMsg("You're in. Welcome ✦"); if (PAYWALL_ENABLED) setScreen(S.FOUNDING_MEMBER); }
     else if (result==="cancel") setCheckoutMsg("Checkout cancelled — no charge was made.");
     if (result) window.history.replaceState({}, "", window.location.pathname);
   },[]);
@@ -1202,6 +1250,7 @@ function App() {
         {screen===S.PREVIEW_GATE&&<PreviewGate initData={data} onUnlocked={()=>setScreen(S.RESPONSE)} onBack={()=>{ setData({}); setScreen(S.WELCOME); }}/>}
         {screen===S.RESPONSE&&<V1Response data={data} onUpgrade={()=>setScreen(S.V2)} onRestart={()=>{ setData({}); setScreen(S.WELCOME); }}/>}
         {screen===S.V2&&<V2App initData={data} onFinish={()=>{ setData({}); setScreen(S.WELCOME); }}/>}
+        {screen===S.FOUNDING_MEMBER&&<FoundingMemberPrompt onDone={()=>setScreen(S.WELCOME)}/>}
       </div>
     </div>
   );
