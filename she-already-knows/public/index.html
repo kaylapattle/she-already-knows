@@ -177,6 +177,15 @@ const FEELINGS = [
   { id:"no_self_trust", emoji:"🌀", label:"Don't trust myself" },
 ];
 
+const DISCOVERY_SOURCES = [
+  { id:"instagram", label:"Instagram" },
+  { id:"tiktok",    label:"TikTok" },
+  { id:"facebook",  label:"Facebook" },
+  { id:"press",     label:"Press / News" },
+  { id:"friend",    label:"Friend" },
+  { id:"other",     label:"Other" },
+];
+
 const PATTERN_META = {
   people_pleasing:{
     color:"#C8A882",
@@ -447,11 +456,12 @@ function V1Input({ onContinue }) {
   const remembered = loadUser();
   const [name,setName]=useState(remembered?remembered.name:""); const [email,setEmail]=useState(remembered?remembered.email:"");
   const [situation,setSituation]=useState(""); const [feeling,setFeeling]=useState(null);
+  const [discoverySource,setDiscoverySource]=useState(null);
   const [editId,setEditId]=useState(!remembered); // show name/email fields only for new visitors
   const [loggedIn,setLoggedIn]=useState(false);
   useEffect(()=>{ authSession().then(s=>setLoggedIn(!!s)); },[]);
   async function manage() { try { const r=await createPortalSession(); if(r&&r.url) window.location.href=r.url; } catch(e) {} }
-  const canGo = name.trim()&&email.trim()&&email.includes("@")&&situation.trim();
+  const canGo = name.trim()&&email.trim()&&email.includes("@")&&situation.trim()&&discoverySource;
 
   return (
     <div style={{ padding:"48px 24px", maxWidth:"440px", margin:"0 auto" }}>
@@ -474,6 +484,16 @@ function V1Input({ onContinue }) {
           </div>
         )}
         <div style={{ marginBottom:"20px" }}>
+          <label style={{ display:"block", fontFamily:F.body, fontSize:"10px", color:`${C.gold}99`, letterSpacing:"1.5px", textTransform:"uppercase", marginBottom:"10px" }}>Where did you discover She Already Knows?</label>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"8px" }}>
+            {DISCOVERY_SOURCES.map(s => (
+              <button key={s.id} onClick={()=>setDiscoverySource(s.id)} style={{ background:discoverySource===s.id?"rgba(200,168,130,0.12)":"rgba(245,239,230,0.02)", border:`1px solid ${discoverySource===s.id?C.gold:"rgba(200,168,130,0.18)"}`, borderRadius:"10px", padding:"10px 12px", color:discoverySource===s.id?C.text:C.textDim, fontFamily:F.body, fontSize:"13px", cursor:"pointer", transition:"all 0.2s ease", textAlign:"left" }}>
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div style={{ marginBottom:"20px" }}>
           <label style={{ display:"block", fontFamily:F.body, fontSize:"10px", color:`${C.gold}99`, letterSpacing:"1.5px", textTransform:"uppercase", marginBottom:"7px" }}>What decision are you stuck on right now?</label>
           <InputStyle value={situation} onChange={e=>setSituation(e.target.value)} placeholder="Just say it. No fixing, no filtering. Stream of consciousness is perfect." multi/>
         </div>
@@ -487,7 +507,7 @@ function V1Input({ onContinue }) {
             ))}
           </div>
         </div>
-        <GoldBtn onClick={()=>canGo&&onContinue({name:name.trim(),email:email.trim(),situation,feeling})} disabled={!canGo}>Ask her →</GoldBtn>
+        <GoldBtn onClick={()=>canGo&&onContinue({name:name.trim(),email:email.trim(),situation,feeling,discoverySource})} disabled={!canGo}>Ask her →</GoldBtn>
         <p style={{ fontFamily:F.body, fontSize:"11px", color:C.textFaint, textAlign:"center", marginTop:"10px" }}>No spam. Just Kayla, when it matters.</p>
         {loggedIn && <p style={{ textAlign:"center", marginTop:"16px" }}><button onClick={manage} style={{ background:"none", border:"none", color:`${C.gold}88`, fontFamily:F.body, fontSize:"11px", letterSpacing:"0.5px", cursor:"pointer", textDecoration:"underline" }}>Manage subscription</button></p>}
       </Fade>
@@ -1177,7 +1197,7 @@ function App() {
       )}
       <div style={{ position:"relative", zIndex:1 }}>
         {screen===S.WELCOME&&<V1Welcome onStart={()=>setScreen(S.INPUT)}/>}
-        {screen===S.INPUT&&<V1Input onContinue={d=>{ setData(d); saveUser(d.name, d.email); subscribeToFlodesk(d.name, d.email, SEGMENT_APP); setScreen(isCrisis(d.situation)?S.CRISIS:((PAYWALL_ENABLED&&hasPreviewed())?S.PREVIEW_GATE:S.RESPONSE)); }}/>}
+        {screen===S.INPUT&&<V1Input onContinue={d=>{ setData(d); saveUser(d.name, d.email); const discoveryLabel=(DISCOVERY_SOURCES.find(s=>s.id===d.discoverySource)||{}).label; subscribeToFlodesk(d.name, d.email, SEGMENT_APP, discoveryLabel?{discovered_via:discoveryLabel}:undefined); setScreen(isCrisis(d.situation)?S.CRISIS:((PAYWALL_ENABLED&&hasPreviewed())?S.PREVIEW_GATE:S.RESPONSE)); }}/>}
         {screen===S.CRISIS&&<CrisisScreen onContinue={()=>setScreen(S.RESPONSE)}/>}
         {screen===S.PREVIEW_GATE&&<PreviewGate initData={data} onUnlocked={()=>setScreen(S.RESPONSE)} onBack={()=>{ setData({}); setScreen(S.WELCOME); }}/>}
         {screen===S.RESPONSE&&<V1Response data={data} onUpgrade={()=>setScreen(S.V2)} onRestart={()=>{ setData({}); setScreen(S.WELCOME); }}/>}
