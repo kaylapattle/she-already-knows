@@ -505,20 +505,21 @@ function V1Response({ data, onUpgrade, onRestart }) {
   // If they already have an active trial/subscription, the CTA copy shouldn't
   // pitch them on creating an account / starting a trial they already have.
   useEffect(()=>{
-    if (!PAYWALL_ENABLED) return;
+    if (!PAYWALL_ENABLED || !SB) { setAccessChecked(true); return; }
     let done = false;
     const finish = (sub) => { if (done) return; done = true; if (sub) setIsSubscriber(true); setAccessChecked(true); };
-    (async () => {
-      try {
-        const session = await authSession();
-        if (!session) { finish(false); return; }
-        const a = await checkAccess();
-        finish(!!a.access);
-      } catch(e) { finish(false); }
-    })();
+    // Use onAuthStateChange rather than a one-shot getSession() call — Supabase
+    // fires this reliably once its session-restore-from-storage completes
+    // (including on first page load), avoiding a false "not logged in" read
+    // that a single early getSession() call can return before hydration finishes.
+    const { data: listener } = SB.auth.onAuthStateChange((event, session) => {
+      if (done) return;
+      if (!session) { finish(false); return; }
+      checkAccess().then(a => finish(!!a.access)).catch(()=>finish(false));
+    });
     // Safety net: never let a slow/stuck access check block the free response.
     const t = setTimeout(() => finish(false), 4000);
-    return () => clearTimeout(t);
+    return () => { clearTimeout(t); listener && listener.subscription && listener.subscription.unsubscribe(); };
   },[]);
 
   useEffect(()=>{
