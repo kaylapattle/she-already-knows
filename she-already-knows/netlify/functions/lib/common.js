@@ -77,4 +77,21 @@ async function addToFlodesk(email, firstName, segmentId) {
   }
 }
 
-module.exports = { CORS, TRIAL_DAYS, json, preflight, getSupabase, normEmail, hasAccess, getAuthedEmail, addToFlodesk };
+// Remove a subscriber from a Flodesk segment (e.g. take them out of
+// "subscribers" once they cancel). Best-effort — never throws.
+async function removeFromFlodeskSegment(email, segmentId) {
+  const apiKey = process.env.FLODESK_API_KEY;
+  if (!apiKey || !email || !segmentId) return;
+  try {
+    const auth = "Basic " + Buffer.from(apiKey + ":").toString("base64");
+    await fetch(`https://api.flodesk.com/v1/subscribers/${encodeURIComponent(email)}/segments`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json", "Authorization": auth },
+      body: JSON.stringify({ segment_ids: [segmentId] }),
+    });
+  } catch (e) {
+    console.error("removeFromFlodeskSegment error:", e.message);
+  }
+}
+
+module.exports = { CORS, TRIAL_DAYS, json, preflight, getSupabase, normEmail, hasAccess, getAuthedEmail, addToFlodesk, removeFromFlodeskSegment };
