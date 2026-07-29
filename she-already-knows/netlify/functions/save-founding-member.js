@@ -28,14 +28,9 @@ exports.handler = async function (event) {
       .select("name")
       .maybeSingle();
 
-    console.log("DEBUG founding-member: response=", response, "FOUNDING_SEGMENT=", FOUNDING_SEGMENT, "sub=", JSON.stringify(sub));
     if (response === "yes" && FOUNDING_SEGMENT) {
       const firstName = sub && sub.name ? sub.name.split(" ")[0] : "";
-      console.log("DEBUG founding-member: calling addToFlodesk", email, firstName, FOUNDING_SEGMENT);
       await addToFlodesk(email, firstName, FOUNDING_SEGMENT);
-      console.log("DEBUG founding-member: addToFlodesk call completed");
-    } else {
-      console.log("DEBUG founding-member: SKIPPED addToFlodesk — condition false");
     }
 
     return json(200, { success: true });

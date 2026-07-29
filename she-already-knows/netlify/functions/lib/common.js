@@ -64,10 +64,7 @@ function hasAccess(sub) {
 // when someone starts a paid subscription). Best-effort — never throws.
 async function addToFlodesk(email, firstName, segmentId) {
   const apiKey = process.env.FLODESK_API_KEY;
-  if (!apiKey || !email || !segmentId) {
-    console.log("DEBUG addToFlodesk: SKIPPED — apiKey?", !!apiKey, "email?", !!email, "segmentId?", !!segmentId);
-    return;
-  }
+  if (!apiKey || !email || !segmentId) return;
   try {
     const auth = "Basic " + Buffer.from(apiKey + ":").toString("base64");
     const res = await fetch("https://api.flodesk.com/v1/subscribers", {
@@ -75,8 +72,7 @@ async function addToFlodesk(email, firstName, segmentId) {
       headers: { "Content-Type": "application/json", "Authorization": auth },
       body: JSON.stringify({ email, first_name: firstName || "", segment_ids: [segmentId] }),
     });
-    const bodyText = await res.text();
-    console.log("DEBUG addToFlodesk: response status=", res.status, "body=", bodyText.slice(0, 300));
+    if (!res.ok) console.error("addToFlodesk: Flodesk returned", res.status, await res.text());
   } catch (e) {
     console.error("addToFlodesk error:", e.message);
   }
