@@ -60,3 +60,21 @@ and they get the 30-day window before any charge.
 ## Local testing
 `netlify dev` with a local `.env` (copy from `.env.example`). For webhooks use the
 Stripe CLI: `stripe listen --forward-to localhost:8888/.netlify/functions/stripe-webhook`.
+
+## Guide-purchaser trial (Stan Store)
+Guide buyers get a 30-day no-card trial (see `check-access.js`). Their email has
+to land in the `guide_purchasers` Supabase table first — either:
+- **Manual:** paste emails into `supabase/seed-guide-purchasers.sql` and run it, or
+- **Automatic (Zapier):** see below.
+
+### Zapier automation
+Set `ZAPIER_WEBHOOK_SECRET` in Netlify (generate one: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`).
+In Zapier:
+1. **Trigger:** Stan Store → "New Customer" (or the purchase trigger), filtered to the guide product.
+2. **Action:** "Webhooks by Zapier" → POST to `https://<your-site>/.netlify/functions/add-guide-purchaser`
+   - Header: `X-Webhook-Secret: <the same secret>`
+   - Body (JSON): `{"email": "<mapped from the Stan Store trigger's email field>"}`
+3. Test the Zap (Zapier can send a test payload) — a successful call returns `{"success": true, "email": "..."}`.
+
+The endpoint upserts into `guide_purchasers`; access is then granted automatically
+the next time that email logs into the app (same mechanism as the manual list).
