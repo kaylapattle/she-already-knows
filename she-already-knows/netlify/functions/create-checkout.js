@@ -43,8 +43,10 @@ exports.handler = async function (event) {
     }
     if (!validStored) customerId = null;
 
-    // Only skip the free trial if they have a VALID prior subscription in this mode.
-    const hadSubscription = validStored && !!(sub && sub.stripe_subscription_id);
+    // Only skip the free trial if they have a VALID prior subscription in this mode,
+    // or already used their free period as a guide purchaser (that trial may have
+    // been card-less, so it wouldn't show up as a prior Stripe subscription).
+    const hadSubscription = (validStored && !!(sub && sub.stripe_subscription_id)) || !!(sub && sub.is_guide_purchaser);
     const trialDays = hadSubscription ? 0 : (isBeta ? TRIAL_DAYS.beta : TRIAL_DAYS.new);
 
     if (!customerId) {

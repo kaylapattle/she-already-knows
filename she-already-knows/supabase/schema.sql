@@ -39,6 +39,18 @@ alter table subscribers add column if not exists cancel_feedback text;
 alter table subscribers add column if not exists cancel_followup_ok boolean;
 alter table subscribers add column if not exists cancel_handle text;
 
+-- Guide purchasers (Stan Store) — 30-day no-card trial. Seed this table with
+-- purchaser emails (paste as they come in — see seed-guide-purchasers.sql).
+create table if not exists guide_purchasers (
+  email      text primary key,
+  added_at   timestamptz not null default now()
+);
+alter table guide_purchasers enable row level security;
+
+-- Permanent flag: true for anyone who ever purchased the guide, kept even
+-- after they convert to a paying subscriber (so conversion is trackable).
+alter table subscribers add column if not exists is_guide_purchaser boolean not null default false;
+
 -- Keep updated_at fresh on every write.
 create or replace function set_updated_at()
 returns trigger as $$
