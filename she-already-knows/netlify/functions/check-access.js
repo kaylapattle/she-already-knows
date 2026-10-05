@@ -3,7 +3,9 @@
 //
 // Also where guide-purchaser (Stan Store) handling lives: if this email is on
 // the guide_purchasers list and hasn't been processed yet (is_guide_purchaser
-// still false), grant/extend a 30-day no-card trial. This block only ever
+// still false), grant/extend a 30-day no-card trial — for new people, people
+// mid-trial, and lapsed (canceled) subscribers; paying subscribers are only
+// tagged. This block only ever
 // runs ONCE per person — every code path below checks is_guide_purchaser
 // first and does nothing if it's already true, so re-checking access on every
 // page load never re-extends a trial or re-fires the Flodesk tag.
@@ -70,16 +72,22 @@ exports.handler = async function (event) {
     // Existing row, not yet processed as a guide purchaser — check once.
     if (!sub.is_guide_purchaser && await isGuidePurchaser(db, email)) {
       const updates = { is_guide_purchaser: true };
+      const trialEndDate = new Date(Date.now() + GUIDE_TRIAL_DAYS * 24 * 60 * 60 * 1000);
 
-      // Only extend the trial for someone CURRENTLY mid-trial. Paying/past_due/
-      // canceled subscribers are just tagged — no billing changes.
       if (sub.status === "trialing") {
-        const trialEndDate = new Date(Date.now() + GUIDE_TRIAL_DAYS * 24 * 60 * 60 * 1000);
+        // Mid-trial: extend to 30 days (and move the real Stripe charge date).
         updates.trial_end = trialEndDate.toISOString();
         if (sub.stripe_subscription_id) {
           await extendStripeTrial(sub.stripe_subscription_id, Math.floor(trialEndDate.getTime() / 1000));
         }
+      } else if (sub.status === "canceled") {
+        // Lapsed subscriber: fresh card-less 30-day window. The old Stripe
+        // subscription stays cancelled — they re-subscribe via Checkout when it
+        // ends (no second trial, since is_guide_purchaser is now true).
+        updates.status = "trialing";
+        updates.trial_end = trialEndDate.toISOString();
       }
+      // active / past_due: tag only — billing is never touched.
 
       const { data: updated, error: updErr } = await db
         .from("subscribers").update(updates).eq("email", email).select().single();
