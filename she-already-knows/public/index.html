@@ -1639,7 +1639,7 @@ function App() {
   },[]);
 
   // Hide journal nav while the user is mid-session so it doesn't distract
-  const IN_FLOW = screen===S.RESPONSE||screen===S.V2||screen===S.CRISIS||screen===S.PREVIEW_GATE||screen===S.FOUNDING_MEMBER||screen===S.CANCEL;
+  const HIDE_JOURNAL_NAV = screen===S.JOURNAL||screen===S.PREVIEW_GATE||screen===S.FOUNDING_MEMBER;
 
   return (
     <div style={{ minHeight:"100vh", background:C.bg, backgroundImage:`radial-gradient(ellipse at 15% 15%, rgba(200,168,130,0.07) 0%, transparent 55%), radial-gradient(ellipse at 85% 85%, rgba(139,110,80,0.05) 0%, transparent 55%)`, position:"relative", overflow:"hidden" }}>
@@ -1649,7 +1649,7 @@ function App() {
       {checkoutMsg&&(
         <div onClick={()=>setCheckoutMsg(null)} style={{ position:"fixed", top:"16px", left:"50%", transform:"translateX(-50%)", zIndex:10, background:"rgba(200,168,130,0.12)", border:`1px solid ${C.gold}`, borderRadius:"100px", padding:"10px 20px", color:C.text, fontFamily:F.body, fontSize:"13px", cursor:"pointer", backdropFilter:"blur(8px)" }}>{checkoutMsg}</div>
       )}
-      {loggedIn&&!IN_FLOW&&screen!==S.JOURNAL&&(
+      {loggedIn&&!HIDE_JOURNAL_NAV&&(
         <div style={{ position:"fixed", top:"16px", right:"16px", zIndex:9 }}>
           <button onClick={()=>setScreen(S.JOURNAL)} style={{ background:"rgba(200,168,130,0.1)", border:"1px solid rgba(200,168,130,0.3)", borderRadius:"100px", padding:"8px 16px", color:C.gold, fontFamily:F.body, fontSize:"11px", letterSpacing:"1.5px", textTransform:"uppercase", cursor:"pointer", backdropFilter:"blur(8px)" }}>Journal ✦</button>
         </div>
