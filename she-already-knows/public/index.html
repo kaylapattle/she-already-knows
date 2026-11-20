@@ -680,7 +680,8 @@ SHORT. CONVERSATIONAL. NO HEADERS. NO BULLETS.`;
               <p style={{ fontFamily:F.display, fontSize:"15px", color:C.text, marginBottom:"8px", lineHeight:"1.3" }}>If this helped you hear yourself more clearly...</p>
               <p style={{ fontFamily:F.body, fontSize:"13px", color:C.textDim, lineHeight:"1.7", marginBottom:"16px" }}>The first conversation is often just the beginning. Create your account to continue the conversation.</p>
               <GoldBtn onClick={onUpgrade}>Continue the Conversation →</GoldBtn>
-              <p style={{ fontFamily:F.body, fontSize:"11px", color:C.textFaint, textAlign:"center", marginTop:"10px" }}>Your 7-day free trial begins after you create your account.<br/>$7.99/month after your trial · cancel anytime.</p>
+              <p style={{ fontFamily:F.body, fontSize:"11px", color:C.textFaint, textAlign:"center", marginTop:"10px" }}>Your 7-day free trial begins after you create your account ($7.99/mo after · cancel anytime) — or sign in below if you already subscribed.</p>
+              <button onClick={onUpgrade} style={{ background:"none", border:"none", color:`${C.gold}99`, fontFamily:F.body, fontSize:"12px", marginTop:"8px", cursor:"pointer", textDecoration:"underline" }}>Already subscribed? Sign in with your email</button>
             </>
           )}
         </div>
@@ -776,7 +777,7 @@ function AuthScreen({ initialEmail, onAuthed, onBack }) {
 }
 
 // ─── Paywall (start free trial / resubscribe) ─────────────────────────────────
-function Paywall({ name, trialDays, returning, onBack }) {
+function Paywall({ name, trialDays, returning, onBack, onSignIn }) {
   const [busy,setBusy]=useState(false);
   const [err,setErr]=useState(null);
   async function subscribe() {
@@ -813,6 +814,9 @@ function Paywall({ name, trialDays, returning, onBack }) {
           {err&&<p style={{ fontFamily:F.body, fontSize:"12px", color:C.red, marginTop:"12px" }}>{err}</p>}
         </div>
         <GoldBtn onClick={onBack} outline>← Not right now</GoldBtn>
+        {onSignIn&&(
+          <button onClick={onSignIn} style={{ background:"none", border:"none", color:`${C.gold}99`, fontFamily:F.body, fontSize:"12px", marginTop:"14px", cursor:"pointer", textDecoration:"underline" }}>Already subscribed? Sign in with your email</button>
+        )}
       </Fade>
     </div>
   );
@@ -876,7 +880,7 @@ function V2App({ initData, onFinish }) {
 
   if(screen===V2S.AUTH) return <AuthScreen initialEmail={initData.email} onAuthed={resolveAccess} onBack={onFinish}/>;
   if(screen===V2S.CHECKING) return <V2Checking/>;
-  if(screen===V2S.PAYWALL) return <Paywall name={initData.name} trialDays={gate.trialDays} returning={gate.returning} onBack={onFinish}/>;
+  if(screen===V2S.PAYWALL) return <Paywall name={initData.name} trialDays={gate.trialDays} returning={gate.returning} onBack={onFinish} onSignIn={()=>setScreen(V2S.AUTH)}/>;
 
   if(screen===V2S.GOAL) return (
     <div style={{ padding:"48px 24px", maxWidth:"440px", margin:"0 auto" }}>
@@ -1201,7 +1205,7 @@ function PreviewGate({ initData, onUnlocked, onBack }) {
 
   if(screen==="checking") return <V2Checking/>;
   if(screen==="auth") return <AuthScreen initialEmail={initData.email} onAuthed={resolve} onBack={onBack}/>;
-  if(screen==="paywall") return <Paywall name={initData.name} trialDays={gate.trialDays} returning={gate.returning} onBack={onBack}/>;
+  if(screen==="paywall") return <Paywall name={initData.name} trialDays={gate.trialDays} returning={gate.returning} onBack={onBack} onSignIn={()=>setScreen("auth")}/>;
   return null;
 }
 
