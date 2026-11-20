@@ -150,6 +150,36 @@ function hasPreviewed() {
 function markPreviewed() {
   try { localStorage.setItem("sak_previewed", "1"); } catch(e) {}
 }
+
+// ─── Journal helpers ──────────────────────────────────────────────────────────
+function callJournal(action, body) {
+  return apiPost("/.netlify/functions/journal", Object.assign({ action }, body || {}));
+}
+
+async function fetchJournalMemory() {
+  try {
+    var token = await authToken();
+    if (!token) return null;
+    var r = await callJournal("memory", { limit: 5 });
+    if (!r || !r.entries || r.entries.length === 0) return null;
+    return r.entries;
+  } catch(e) { return null; }
+}
+
+function buildMemoryContext(entries) {
+  if (!entries || entries.length === 0) return "";
+  var FLABELS = { fear_failure:"Fear of failure", overwhelm:"Overwhelm", fear_judgment:"Fear of judgment", no_self_trust:"Don't trust myself" };
+  var lines = entries.slice(0, 5).map(function(e) {
+    var date = new Date(e.created_at).toLocaleDateString("en-US", { month:"short", day:"numeric" });
+    var parts = [];
+    if (e.situation) parts.push('Was working on: "' + e.situation.slice(0, 100) + (e.situation.length > 100 ? "…" : "") + '"');
+    if (e.feeling) parts.push("Feeling: " + (FLABELS[e.feeling] || e.feeling));
+    if (e.ai_response) parts.push('Key insight: "' + e.ai_response.slice(0, 180) + (e.ai_response.length > 180 ? "…" : "") + '"');
+    if (e.body) parts.push('Her reflection: "' + e.body.slice(0, 120) + (e.body.length > 120 ? "…" : "") + '"');
+    return "[" + date + "] " + parts.join(" · ");
+  });
+  return "\nHER PAST SESSIONS (most recent first — build on her journey, don’t repeat the same insights):\n" + lines.join("\n") + "\n";
+}
 </script>
 <script type="text/babel">
 const {useState, useEffect} = React;
@@ -462,6 +492,238 @@ function InputStyle({ value, onChange, placeholder, multi }) {
   return multi ? <textarea value={value} onChange={onChange} placeholder={placeholder} style={{...s,minHeight:"110px"}} {...f}/> : <input value={value} onChange={onChange} placeholder={placeholder} style={s} {...f}/>;
 }
 
+function renderWithItalics(text) {
+  if (!text || typeof text !== "string" || !text.includes("*")) return text;
+  const parts = text.split(/(\*[^*\n]+\*)/g);
+  return parts.map((part, i) =>
+    part.startsWith("*") && part.endsWith("*")
+      ? <em key={i}>{part.slice(1, -1)}</em>
+      : part
+  );
+}
+
+// ─── Journal ─────────────────────────────────────────────────────────────────
+
+function JournalScreen({ onBack, onTweak }) {
+  const [entries,setEntries]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [selected,setSelected]=useState(null);
+  const [editBody,setEditBody]=useState("");
+  const [saving,setSaving]=useState(false);
+  const [savedMsg,setSavedMsg]=useState("");
+  const [showHistory,setShowHistory]=useState(false);
+  const [newMode,setNewMode]=useState(false);
+  const [newBody,setNewBody]=useState("");
+  const [savingNew,setSavingNew]=useState(false);
+
+  useEffect(()=>{ loadEntries(); },[]);
+
+  async function loadEntries() {
+    setLoading(true);
+    try { const r=await callJournal("list",{}); setEntries((r&&r.entries)||[]); }
+    catch(e) { setEntries([]); }
+    setLoading(false);
+  }
+
+  function openEntry(entry) {
+    setSelected(entry); setEditBody(entry.body||""); setShowHistory(false); setSavedMsg("");
+  }
+
+  async function saveEdit() {
+    if (!selected||saving) return;
+    setSaving(true);
+    try {
+      const r=await callJournal("update",{ entry_id:selected.id, entry_body:editBody });
+      const newVer={ id:(r&&r.version&&r.version.id)||Date.now()+"", saved_at:new Date().toISOString(), body:editBody, source:"manual" };
+      const patch=e=>e.id===selected.id?{...e, body:editBody, journal_entry_versions:[newVer,...(e.journal_entry_versions||[])]}:e;
+      setEntries(prev=>prev.map(patch));
+      setSelected(prev=>patch(prev));
+      setSavedMsg("Saved ❆"); setTimeout(()=>setSavedMsg(""),2500);
+    } catch(e) { setSavedMsg("Couldn’t save. Try again."); }
+    setSaving(false);
+  }
+
+  async function deleteEntry() {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await callJournal("delete",{ entry_id:selected.id });
+      setEntries(prev=>prev.filter(e=>e.id!==selected.id));
+      setSelected(null);
+    } catch(e) { setSavedMsg("Couldn’t delete."); }
+    setSaving(false);
+  }
+
+  async function saveNew() {
+    if (!newBody.trim()||savingNew) return;
+    setSavingNew(true);
+    try {
+      const r=await callJournal("save",{ entry_body:newBody, source:"manual" });
+      if (r&&r.entry) {
+        const entry={...r.entry, journal_entry_versions:[]};
+        setEntries(prev=>[entry,...prev]);
+        setNewMode(false); setNewBody(""); openEntry(entry);
+      }
+    } catch(e) {}
+    setSavingNew(false);
+  }
+
+  if (loading) return (
+    <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", minHeight:"100vh", padding:"40px" }}>
+      <div style={{ width:"28px", height:"28px", borderRadius:"50%", border:"1.5px solid transparent", borderTopColor:C.gold, animation:"spin 1s linear infinite", marginBottom:"16px" }}/>
+      <p style={{ fontFamily:F.display, fontSize:"15px", color:C.textFaint, fontStyle:"italic" }}>Loading your journal…</p>
+    </div>
+  );
+
+  // ── Detail view ───────────────────────────────────────────────────────────────
+  if (selected) {
+    const feelingLabel=selected.feeling?(FEELINGS.find(f=>f.id===selected.feeling)||{}).label:null;
+    const dateStr=new Date(selected.created_at).toLocaleDateString("en-US",{ month:"long", day:"numeric", year:"numeric" });
+    const versions=selected.journal_entry_versions||[];
+    const aiParas=selected.ai_response?selected.ai_response.split("\n").filter(p=>p.trim().length>3):[];
+    const aiCloser=aiParas.length>1?aiParas[aiParas.length-1]:null;
+    const aiBody=aiCloser?aiParas.slice(0,-1):aiParas;
+
+    return (
+      <div style={{ padding:"40px 24px 60px", maxWidth:"440px", margin:"0 auto" }}>
+        <Fade>
+          <div style={{ display:"flex", alignItems:"center", gap:"10px", marginBottom:"24px" }}>
+            <button onClick={()=>setSelected(null)} style={{ background:"none", border:"none", color:C.gold, fontFamily:F.body, fontSize:"13px", cursor:"pointer", padding:0 }}>← Journal</button>
+            <span style={{ color:C.textFaint, fontSize:"12px" }}>/</span>
+            <span style={{ fontFamily:F.body, fontSize:"12px", color:C.textFaint }}>{dateStr}</span>
+          </div>
+
+          <div style={{ display:"flex", gap:"8px", flexWrap:"wrap", marginBottom:"18px" }}>
+            {feelingLabel&&<Tag color={C.gold}>{feelingLabel}</Tag>}
+            {selected.situation&&<Tag color={C.textFaint}>Session entry</Tag>}
+            {!selected.situation&&<Tag color={`${C.gold}88`}>Standalone reflection</Tag>}
+          </div>
+
+          {selected.situation&&(
+            <div style={{ background:"rgba(245,239,230,0.02)", border:"1px solid rgba(200,168,130,0.14)", borderRadius:"12px", padding:"14px 16px", marginBottom:"16px" }}>
+              <p style={{ fontFamily:F.body, fontSize:"10px", color:`${C.gold}88`, letterSpacing:"1.5px", textTransform:"uppercase", marginBottom:"7px" }}>She was stuck on</p>
+              <p style={{ fontFamily:F.body, fontSize:"14px", color:C.textDim, lineHeight:"1.75", margin:"0 0 10px", fontStyle:"italic" }}>"{selected.situation}"</p>
+              {onTweak&&<button onClick={()=>onTweak({situation:selected.situation,feeling:selected.feeling})} style={{ background:"none", border:"none", color:`${C.gold}88`, fontFamily:F.body, fontSize:"12px", cursor:"pointer", textDecoration:"underline", padding:0 }}>Tweak what you shared & ask again</button>}
+            </div>
+          )}
+
+          {selected.ai_response&&aiBody.length>0&&(
+            <div style={{ background:"rgba(200,168,130,0.05)", border:"1px solid rgba(200,168,130,0.15)", borderRadius:"18px", padding:"22px", marginBottom:"16px" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:"8px", marginBottom:"14px" }}>
+                <div style={{ width:"28px", height:"28px", borderRadius:"50%", border:`1px solid ${C.gold}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:"12px", flexShrink:0 }}>❆</div>
+                <p style={{ fontFamily:F.display, fontSize:"13px", color:C.textFaint, margin:0, fontStyle:"italic" }}>Her higher self</p>
+              </div>
+              {aiBody.map((para,i)=>(
+                <p key={i} style={{ fontFamily:F.body, fontSize:"14px", color:"rgba(245,239,230,0.88)", lineHeight:"1.9", margin:i===0?"0 0 14px":"14px 0 0" }}>{renderWithItalics(para)}</p>
+              ))}
+              {aiCloser&&(
+                <p style={{ fontFamily:F.body, fontSize:"14px", color:`${C.gold}EE`, lineHeight:"1.8", fontStyle:"italic", marginTop:"14px", paddingTop:"12px", borderTop:"1px solid rgba(200,168,130,0.12)" }}>{renderWithItalics(aiCloser)}</p>
+              )}
+            </div>
+          )}
+
+          <div style={{ marginBottom:"12px" }}>
+            <label style={{ display:"block", fontFamily:F.body, fontSize:"10px", color:`${C.gold}99`, letterSpacing:"1.5px", textTransform:"uppercase", marginBottom:"8px" }}>Your reflection</label>
+            <textarea value={editBody} onChange={e=>setEditBody(e.target.value)} placeholder="Write whatever this brought up for you…" style={{ width:"100%", background:"rgba(245,239,230,0.03)", border:"1px solid rgba(200,168,130,0.2)", borderRadius:"12px", padding:"14px 16px", color:C.text, fontFamily:F.body, fontSize:"14px", lineHeight:"1.8", outline:"none", resize:"none", minHeight:"120px", boxSizing:"border-box" }} onFocus={e=>e.target.style.borderColor="rgba(200,168,130,0.5)"} onBlur={e=>e.target.style.borderColor="rgba(200,168,130,0.2)"}/>
+          </div>
+          <div style={{ display:"flex", alignItems:"center", gap:"12px", marginBottom:"20px" }}>
+            <GoldBtn onClick={saveEdit} disabled={saving||editBody===(selected.body||"")}>{saving?"Saving…":"Save reflection"}</GoldBtn>
+            {savedMsg&&<span style={{ fontFamily:F.body, fontSize:"12px", color:savedMsg.startsWith("Saved")?C.gold:C.red, flexShrink:0 }}>{savedMsg}</span>}
+          </div>
+
+          {versions.length>0&&(
+            <div style={{ marginBottom:"20px" }}>
+              <button onClick={()=>setShowHistory(h=>!h)} style={{ background:"none", border:"none", color:`${C.gold}88`, fontFamily:F.body, fontSize:"12px", cursor:"pointer", textDecoration:"underline", padding:0 }}>
+                {showHistory?"Hide":`What you wrote before (${versions.length})`}
+              </button>
+              {showHistory&&(
+                <div style={{ marginTop:"12px", display:"flex", flexDirection:"column", gap:"12px" }}>
+                  {versions.map((v,i)=>{
+                    const d=new Date(v.saved_at);
+                    const vDate=d.toLocaleDateString("en-US",{ month:"long", day:"numeric", year:"numeric" })+" at "+d.toLocaleTimeString("en-US",{ hour:"numeric", minute:"2-digit" });
+                    return (
+                      <div key={v.id} style={{ borderLeft:`2px solid rgba(200,168,130,${i===0?0.5:0.18})`, paddingLeft:"14px" }}>
+                        <span style={{ fontFamily:F.body, fontSize:"10px", color:i===0?`${C.gold}99`:C.textFaint, letterSpacing:"0.5px", display:"block", marginBottom:"6px" }}>{vDate}</span>
+                        <p style={{ fontFamily:F.body, fontSize:"13px", color:C.textDim, lineHeight:"1.75", margin:0, fontStyle:"italic" }}>{v.body||"—"}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          <button onClick={deleteEntry} disabled={saving} style={{ background:"none", border:"none", color:"rgba(200,90,90,0.4)", fontFamily:F.body, fontSize:"11px", cursor:"pointer", textDecoration:"underline", padding:0 }}>Delete this entry</button>
+        </Fade>
+      </div>
+    );
+  }
+
+  // ── List view ─────────────────────────────────────────────────────────────────
+  return (
+    <div style={{ padding:"40px 24px 60px", maxWidth:"440px", margin:"0 auto" }}>
+      <Fade>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:"6px" }}>
+          <div>
+            <div style={{ fontSize:"20px", marginBottom:"6px" }}>❆</div>
+            <h2 style={{ fontFamily:F.display, fontSize:"26px", fontWeight:"400", color:C.text, margin:0 }}>Your Journal</h2>
+          </div>
+          <button onClick={onBack} style={{ background:"none", border:"none", color:`${C.gold}88`, fontFamily:F.body, fontSize:"12px", cursor:"pointer", textDecoration:"underline" }}>← Home</button>
+        </div>
+        <p style={{ fontFamily:F.body, fontSize:"13px", color:C.textFaint, lineHeight:"1.7", marginBottom:"28px" }}>Every conversation. Every insight. Yours to keep.</p>
+
+        {!newMode?(
+          <button onClick={()=>setNewMode(true)} style={{ display:"flex", alignItems:"center", gap:"9px", width:"100%", background:"rgba(200,168,130,0.05)", border:"1px dashed rgba(200,168,130,0.3)", borderRadius:"12px", padding:"13px 16px", color:C.textDim, fontFamily:F.body, fontSize:"13px", cursor:"pointer", marginBottom:"20px", textAlign:"left" }}>
+            <span style={{ color:C.gold, fontSize:"16px" }}>+</span> Write a new reflection
+          </button>
+        ):(
+          <div style={{ marginBottom:"20px" }}>
+            <textarea value={newBody} onChange={e=>setNewBody(e.target.value)} placeholder="What are you sitting with today…" autoFocus style={{ width:"100%", background:"rgba(245,239,230,0.03)", border:"1px solid rgba(200,168,130,0.3)", borderRadius:"12px", padding:"14px 16px", color:C.text, fontFamily:F.body, fontSize:"14px", lineHeight:"1.8", outline:"none", resize:"none", minHeight:"110px", boxSizing:"border-box", marginBottom:"10px" }}/>
+            <div style={{ display:"flex", gap:"8px" }}>
+              <GoldBtn onClick={saveNew} disabled={!newBody.trim()||savingNew}>{savingNew?"Saving…":"Save entry"}</GoldBtn>
+              <GoldBtn onClick={()=>{ setNewMode(false); setNewBody(""); }} outline>Cancel</GoldBtn>
+            </div>
+          </div>
+        )}
+
+        {entries.length===0?(
+          <div style={{ textAlign:"center", padding:"40px 0" }}>
+            <p style={{ fontFamily:F.display, fontSize:"16px", color:C.textFaint, fontStyle:"italic" }}>Your entries will appear here.</p>
+            <p style={{ fontFamily:F.body, fontSize:"13px", color:C.textFaint, marginTop:"6px", lineHeight:"1.7" }}>Complete a session or write a reflection above to get started.</p>
+          </div>
+        ):(
+          <div style={{ display:"flex", flexDirection:"column", gap:"10px" }}>
+            {entries.map(entry=>{
+              const dateStr=new Date(entry.created_at).toLocaleDateString("en-US",{ month:"short", day:"numeric", year:"numeric" });
+              const feelingLabel=entry.feeling?(FEELINGS.find(f=>f.id===entry.feeling)||{}).label:null;
+              const preview=entry.body?entry.body.slice(0,120)+(entry.body.length>120?"…":""):(entry.situation?entry.situation.slice(0,100)+(entry.situation.length>100?"…":""):"");
+              const vCount=(entry.journal_entry_versions||[]).length;
+              return (
+                <button key={entry.id} onClick={()=>openEntry(entry)} style={{ background:"rgba(245,239,230,0.02)", border:"1px solid rgba(200,168,130,0.16)", borderRadius:"14px", padding:"16px 18px", cursor:"pointer", textAlign:"left", width:"100%", transition:"border-color 0.18s" }} onMouseEnter={e=>e.currentTarget.style.borderColor="rgba(200,168,130,0.4)"} onMouseLeave={e=>e.currentTarget.style.borderColor="rgba(200,168,130,0.16)"}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:"6px" }}>
+                    <span style={{ fontFamily:F.body, fontSize:"11px", color:C.textFaint }}>{dateStr}</span>
+                    <div style={{ display:"flex", gap:"6px", alignItems:"center" }}>
+                      {feelingLabel&&<span style={{ fontFamily:F.body, fontSize:"10px", color:`${C.gold}99`, background:"rgba(200,168,130,0.1)", borderRadius:"100px", padding:"2px 8px" }}>{feelingLabel}</span>}
+                      {vCount>0&&<span style={{ fontFamily:F.body, fontSize:"10px", color:C.textFaint }}>{vCount} {vCount===1?"edit":"edits"}</span>}
+                    </div>
+                  </div>
+                  {preview?<p style={{ fontFamily:F.body, fontSize:"13px", color:C.textDim, lineHeight:"1.65", margin:0, fontStyle:entry.body?"normal":"italic" }}>{preview}</p>:<p style={{ fontFamily:F.body, fontSize:"13px", color:C.textFaint, margin:0, fontStyle:"italic" }}>Session entry — tap to open</p>}
+                  {entry.ai_response&&(
+                    <div style={{ marginTop:"6px", display:"flex", alignItems:"center", gap:"5px" }}>
+                      <span style={{ fontSize:"10px", color:C.gold }}>❆</span>
+                      <span style={{ fontFamily:F.body, fontSize:"10px", color:`${C.gold}88` }}>Includes AI insight</span>
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </Fade>
+    </div>
+  );
+}
+
 // ─── V1: Instant Relief ───────────────────────────────────────────────────────
 
 function V1Welcome({ onStart }) {
@@ -479,10 +741,10 @@ function V1Welcome({ onStart }) {
   );
 }
 
-function V1Input({ onContinue, onCancelSubscription }) {
+function V1Input({ onContinue, onCancelSubscription, initialSituation, initialFeeling }) {
   const remembered = loadUser();
   const [name,setName]=useState(remembered?remembered.name:""); const [email,setEmail]=useState(remembered?remembered.email:"");
-  const [situation,setSituation]=useState(""); const [feeling,setFeeling]=useState(null);
+  const [situation,setSituation]=useState(initialSituation||""); const [feeling,setFeeling]=useState(initialFeeling||null);
   const rememberedDiscovery = loadDiscoverySource();
   const [discoverySource,setDiscoverySource]=useState(rememberedDiscovery);
   const [editId,setEditId]=useState(!remembered); // show name/email fields only for new visitors
@@ -583,7 +845,11 @@ function V1Response({ data, onUpgrade, onRestart }) {
     const local = buildInstantResponse(data.name, data.situation, data.feeling);
     const feelingLabel = data.feeling ? FEELINGS.find(f=>f.id===data.feeling)?.label : "not specified";
 
-    const prompt = `You are ${data.name}'s higher self.
+    (async () => {
+      const memory = await fetchJournalMemory();
+      const memCtx = buildMemoryContext(memory);
+
+      const prompt = `You are ${data.name}'s higher self.
 
 BEFORE WRITING: Identify the PRIMARY emotional driver in what she shared:
 - GUILT: feels selfish choosing herself, "bad mom," "letting people down"
@@ -599,7 +865,7 @@ RULES:
 - NEVER: healing / journey / trust the process / you've got this / perfectionism / discipline (unless she showed it)
 - Do NOT be abstract or vague
 - Slightly confronting but safe
-
+${memCtx}
 HER NAME: ${data.name}
 STUCK ON: "${data.situation}"
 EMOTIONAL SIGNAL: ${feelingLabel}
@@ -611,17 +877,26 @@ STRUCTURE — 3 short paragraphs:
 
 SHORT. CONVERSATIONAL. NO HEADERS. NO BULLETS.`;
 
-    callClaude([{role:"user",content:prompt}], 600)
-    .then(d=>{
-      const text=d?.content?.map(c=>c.text||"").join("").trim();
-      if(text&&text.length>100){
-        const paras=text.split("\n").filter(p=>p.trim().length>3);
-        const closer=paras.pop();
-        setResp({...local,aiBody:paras.join("\n\n"),aiCloser:closer,isAI:true});
-      } else { setResp(local); }
+      try {
+        const d = await callClaude([{role:"user",content:prompt}], 650);
+        const text = d?.content?.map(c=>c.text||"").join("").trim();
+        if (text&&text.length>100) {
+          const paras = text.split("\n").filter(p=>p.trim().length>3);
+          const closer = paras.pop();
+          setResp({...local,aiBody:paras.join("\n\n"),aiCloser:closer,isAI:true});
+          // Auto-save to journal for logged-in subscribers (best-effort, never blocks)
+          try {
+            const token = await authToken();
+            if (token) callJournal("save",{
+              situation: data.situation, feeling: data.feeling,
+              ai_response: paras.join("\n\n")+(closer?"\n\n"+closer:""),
+              entry_body:"", source:"auto"
+            });
+          } catch(e) {}
+        } else { setResp(local); }
+      } catch(e) { setResp(local); }
       setLoading(false); setTimeout(()=>setVis(true),100);
-    })
-    .catch(()=>{ setResp(local); setLoading(false); setTimeout(()=>setVis(true),100); });
+    })();
   },[]);
 
   if(loading || !accessChecked) return (
@@ -649,9 +924,9 @@ SHORT. CONVERSATIONAL. NO HEADERS. NO BULLETS.`;
         <div style={{ background:"rgba(200,168,130,0.05)", border:"1px solid rgba(200,168,130,0.15)", borderRadius:"18px", padding:"22px", marginBottom:"14px" }}>
           {body&&body.split("\n").filter(p=>p.trim().length>3).map((para,i,arr)=>{
             const isLast = !resp?.isAI && i===arr.length-1;
-            return <p key={i} style={{ fontFamily:F.body, fontSize:"15px", color:isLast?`${C.gold}EE`:"rgba(245,239,230,0.9)", lineHeight:"1.9", fontStyle:isLast?"italic":"normal", margin:i===0?"0 0 18px":"18px 0 0", paddingTop:isLast?"16px":0, borderTop:isLast?`1px solid rgba(200,168,130,0.12)`:"none" }}>{para}</p>;
+            return <p key={i} style={{ fontFamily:F.body, fontSize:"15px", color:isLast?`${C.gold}EE`:"rgba(245,239,230,0.9)", lineHeight:"1.9", fontStyle:isLast?"italic":"normal", margin:i===0?"0 0 18px":"18px 0 0", paddingTop:isLast?"16px":0, borderTop:isLast?`1px solid rgba(200,168,130,0.12)`:"none" }}>{renderWithItalics(para)}</p>;
           })}
-          {closer&&<p style={{ fontFamily:F.body, fontSize:"15px", color:`${C.gold}EE`, lineHeight:"1.8", fontStyle:"italic", marginTop:"18px", paddingTop:"16px", borderTop:"1px solid rgba(200,168,130,0.12)" }}>{closer}</p>}
+          {closer&&<p style={{ fontFamily:F.body, fontSize:"15px", color:`${C.gold}EE`, lineHeight:"1.8", fontStyle:"italic", marginTop:"18px", paddingTop:"16px", borderTop:"1px solid rgba(200,168,130,0.12)" }}>{renderWithItalics(closer)}</p>}
         </div>
 
         {resp?.callout&&(
@@ -951,7 +1226,11 @@ function V2Coach({ data, onDone }) {
     const allLimiting=[...limitingList,data.customBelief].filter(Boolean);
     const spiralList=(data.spirals||[]).map(id=>SPIRAL_CHECKS.find(s=>s.id===id)?.text).filter(Boolean);
 
-    const prompt = `You are ${data.name}'s higher self — the version that already did the inner work.
+    (async () => {
+      const memory = await fetchJournalMemory();
+      const memCtx = buildMemoryContext(memory);
+
+      const prompt = `You are ${data.name}'s higher self — the version that already did the inner work.
 
 STEP 1 — Identify PRIMARY emotional driver from her inputs:
 - GUILT: feels selfish choosing herself
@@ -962,7 +1241,7 @@ STEP 1 — Identify PRIMARY emotional driver from her inputs:
 Stay in that ONE emotional lane the entire response.
 
 RULES: Mirror her emotional language first. Use specific real moments (posting content, hitting publish, recording but not uploading, starting over). NEVER: healing / journey / trust the process / you've got this. Not abstract. Not generic.
-
+${memCtx}
 NAME: ${data.name}
 GOAL: "${data.goal}"
 SITUATION: "${data.situation}"
@@ -977,17 +1256,26 @@ BELIEF: "${allLimiting[0]||"I'm not ready"}"
 ¶4 — BELIEF FLIP: Take "${allLimiting[0]||"I'm not ready"}". Identify the hidden assumption. Flip THAT assumption specifically. Vary tone — observational, direct, or grounding. Do NOT use: "you don't trust yourself" / "the only wrong choice is not choosing."
 ¶5 — ONE MOVE + screenshot sentence.`;
 
-    callClaude([{role:"user",content:prompt}], 1100)
-    .then(d2=>{
-      const text=d2?.content?.map(c=>c.text||"").join("").trim();
-      if(text&&text.length>200){
-        const paras=text.split("\n").filter(p=>p.trim().length>3);
-        const closer=paras.pop();
-        setResp({...local,aiBody:paras.join("\n\n"),aiCloser:closer,isAI:true});
-      } else { setResp(local); }
+      try {
+        const d2 = await callClaude([{role:"user",content:prompt}], 1200);
+        const text = d2?.content?.map(c=>c.text||"").join("").trim();
+        if (text&&text.length>200) {
+          const paras = text.split("\n").filter(p=>p.trim().length>3);
+          const closer = paras.pop();
+          setResp({...local,aiBody:paras.join("\n\n"),aiCloser:closer,isAI:true});
+          // Auto-save to journal for logged-in subscribers (best-effort)
+          try {
+            const token = await authToken();
+            if (token) callJournal("save",{
+              situation: data.situation, feeling: data.feeling,
+              ai_response: paras.join("\n\n")+(closer?"\n\n"+closer:""),
+              entry_body:"", source:"auto"
+            });
+          } catch(e) {}
+        } else { setResp(local); }
+      } catch(e) { setResp(local); }
       setLoading(false); setTimeout(()=>setVis(true),150);
-    })
-    .catch(()=>{ setResp(local); setLoading(false); setTimeout(()=>setVis(true),150); });
+    })();
   },[]);
 
   return (
@@ -1015,10 +1303,10 @@ BELIEF: "${allLimiting[0]||"I'm not ready"}"
         <div style={{ opacity:vis?1:0, transform:vis?"none":"translateY(12px)", transition:"all 0.6s ease" }}>
           <div style={{ background:"rgba(200,168,130,0.05)", border:"1px solid rgba(200,168,130,0.15)", borderRadius:"18px", padding:"22px", marginBottom:"14px" }}>
             {(resp?.isAI?resp.aiBody:resp?.beliefFlip||"").split("\n").filter(p=>p.trim().length>3).map((para,i)=>(
-              <p key={i} style={{ fontFamily:F.body, fontSize:"15px", color:"rgba(245,239,230,0.9)", lineHeight:"1.9", margin:i===0?"0 0 18px":"18px 0 0" }}>{para}</p>
+              <p key={i} style={{ fontFamily:F.body, fontSize:"15px", color:"rgba(245,239,230,0.9)", lineHeight:"1.9", margin:i===0?"0 0 18px":"18px 0 0" }}>{renderWithItalics(para)}</p>
             ))}
             {resp?.isAI&&resp.aiCloser&&(
-              <p style={{ fontFamily:F.body, fontSize:"15px", color:`${C.gold}EE`, lineHeight:"1.8", fontStyle:"italic", marginTop:"18px", paddingTop:"16px", borderTop:"1px solid rgba(200,168,130,0.12)" }}>{resp.aiCloser}</p>
+              <p style={{ fontFamily:F.body, fontSize:"15px", color:`${C.gold}EE`, lineHeight:"1.8", fontStyle:"italic", marginTop:"18px", paddingTop:"16px", borderTop:"1px solid rgba(200,168,130,0.12)" }}>{renderWithItalics(resp.aiCloser)}</p>
             )}
           </div>
           <div style={{ background:"rgba(245,239,230,0.02)", border:"1px solid rgba(200,168,130,0.1)", borderRadius:"11px", padding:"13px 15px", marginBottom:"20px", textAlign:"center" }}>
@@ -1329,21 +1617,29 @@ function CancelSurvey({ onBack, onDone }) {
 
 // ─── Root ─────────────────────────────────────────────────────────────────────
 
-const S = { WELCOME:"welcome", INPUT:"input", RESPONSE:"response", V2:"v2", CRISIS:"crisis", PREVIEW_GATE:"preview_gate", FOUNDING_MEMBER:"founding_member", CANCEL:"cancel" };
+const S = { WELCOME:"welcome", INPUT:"input", RESPONSE:"response", V2:"v2", CRISIS:"crisis", PREVIEW_GATE:"preview_gate", FOUNDING_MEMBER:"founding_member", CANCEL:"cancel", JOURNAL:"journal" };
 
 function App() {
   const [screen,setScreen]=useState(S.WELCOME);
   const [data,setData]=useState({});
   const [checkoutMsg,setCheckoutMsg]=useState(null);
+  const [loggedIn,setLoggedIn]=useState(false);
+  const [tweakData,setTweakData]=useState({});
 
-  // Handle the return from Stripe Checkout (?checkout=success|cancel).
   useEffect(()=>{
+    // Handle the return from Stripe Checkout (?checkout=success|cancel).
     const params = new URLSearchParams(window.location.search);
     const result = params.get("checkout");
     if (result==="success") { setCheckoutMsg("You're in. Welcome ✦"); if (PAYWALL_ENABLED) setScreen(S.FOUNDING_MEMBER); }
     else if (result==="cancel") setCheckoutMsg("Checkout cancelled — no charge was made.");
     if (result) window.history.replaceState({}, "", window.location.pathname);
+    // Track auth state for journal nav visibility
+    authSession().then(s=>setLoggedIn(!!s));
+    if (SB) SB.auth.onAuthStateChange((_,session)=>setLoggedIn(!!session));
   },[]);
+
+  // Hide journal nav while the user is mid-session so it doesn't distract
+  const IN_FLOW = screen===S.RESPONSE||screen===S.V2||screen===S.CRISIS||screen===S.PREVIEW_GATE||screen===S.FOUNDING_MEMBER||screen===S.CANCEL;
 
   return (
     <div style={{ minHeight:"100vh", background:C.bg, backgroundImage:`radial-gradient(ellipse at 15% 15%, rgba(200,168,130,0.07) 0%, transparent 55%), radial-gradient(ellipse at 85% 85%, rgba(139,110,80,0.05) 0%, transparent 55%)`, position:"relative", overflow:"hidden" }}>
@@ -1353,15 +1649,21 @@ function App() {
       {checkoutMsg&&(
         <div onClick={()=>setCheckoutMsg(null)} style={{ position:"fixed", top:"16px", left:"50%", transform:"translateX(-50%)", zIndex:10, background:"rgba(200,168,130,0.12)", border:`1px solid ${C.gold}`, borderRadius:"100px", padding:"10px 20px", color:C.text, fontFamily:F.body, fontSize:"13px", cursor:"pointer", backdropFilter:"blur(8px)" }}>{checkoutMsg}</div>
       )}
+      {loggedIn&&!IN_FLOW&&screen!==S.JOURNAL&&(
+        <div style={{ position:"fixed", top:"16px", right:"16px", zIndex:9 }}>
+          <button onClick={()=>setScreen(S.JOURNAL)} style={{ background:"rgba(200,168,130,0.1)", border:"1px solid rgba(200,168,130,0.3)", borderRadius:"100px", padding:"8px 16px", color:C.gold, fontFamily:F.body, fontSize:"11px", letterSpacing:"1.5px", textTransform:"uppercase", cursor:"pointer", backdropFilter:"blur(8px)" }}>Journal ✦</button>
+        </div>
+      )}
       <div style={{ position:"relative", zIndex:1 }}>
         {screen===S.WELCOME&&<V1Welcome onStart={()=>setScreen(S.INPUT)}/>}
-        {screen===S.INPUT&&<V1Input onContinue={d=>{ setData(d); saveUser(d.name, d.email); const discoveryLabel=(DISCOVERY_SOURCES.find(s=>s.id===d.discoverySource)||{}).label; subscribeToFlodesk(d.name, d.email, SEGMENT_APP, discoveryLabel?{discovered_via:discoveryLabel}:undefined); setScreen(isCrisis(d.situation)?S.CRISIS:((PAYWALL_ENABLED&&hasPreviewed())?S.PREVIEW_GATE:S.RESPONSE)); }} onCancelSubscription={()=>setScreen(S.CANCEL)}/>}
+        {screen===S.INPUT&&<V1Input onContinue={d=>{ setTweakData({}); setData(d); saveUser(d.name, d.email); const discoveryLabel=(DISCOVERY_SOURCES.find(s=>s.id===d.discoverySource)||{}).label; subscribeToFlodesk(d.name, d.email, SEGMENT_APP, discoveryLabel?{discovered_via:discoveryLabel}:undefined); setScreen(isCrisis(d.situation)?S.CRISIS:((PAYWALL_ENABLED&&hasPreviewed())?S.PREVIEW_GATE:S.RESPONSE)); }} onCancelSubscription={()=>setScreen(S.CANCEL)} initialSituation={tweakData.situation||""} initialFeeling={tweakData.feeling||null}/>}
         {screen===S.CANCEL&&<CancelSurvey onBack={()=>setScreen(S.WELCOME)} onDone={()=>setScreen(S.WELCOME)}/>}
         {screen===S.CRISIS&&<CrisisScreen onContinue={()=>setScreen(S.RESPONSE)}/>}
         {screen===S.PREVIEW_GATE&&<PreviewGate initData={data} onUnlocked={()=>setScreen(S.RESPONSE)} onBack={()=>{ setData({}); setScreen(S.WELCOME); }}/>}
         {screen===S.RESPONSE&&<V1Response data={data} onUpgrade={()=>setScreen(S.V2)} onRestart={()=>{ setData({}); setScreen(S.WELCOME); }}/>}
         {screen===S.V2&&<V2App initData={data} onFinish={()=>{ setData({}); setScreen(S.WELCOME); }}/>}
         {screen===S.FOUNDING_MEMBER&&<FoundingMemberPrompt onDone={()=>setScreen(S.WELCOME)}/>}
+        {screen===S.JOURNAL&&<JournalScreen onBack={()=>setScreen(S.WELCOME)} onTweak={({situation,feeling})=>{ setTweakData({situation,feeling}); setScreen(S.INPUT); }}/>}
       </div>
     </div>
   );
