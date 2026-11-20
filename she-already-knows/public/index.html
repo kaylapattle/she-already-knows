@@ -681,7 +681,7 @@ SHORT. CONVERSATIONAL. NO HEADERS. NO BULLETS.`;
               <p style={{ fontFamily:F.body, fontSize:"13px", color:C.textDim, lineHeight:"1.7", marginBottom:"16px" }}>The first conversation is often just the beginning. Create your account to continue the conversation.</p>
               <GoldBtn onClick={onUpgrade}>Continue the Conversation →</GoldBtn>
               <p style={{ fontFamily:F.body, fontSize:"11px", color:C.textFaint, textAlign:"center", marginTop:"10px" }}>Your 7-day free trial begins after you create your account ($7.99/mo after · cancel anytime) — or sign in below if you already subscribed.</p>
-              <button onClick={onUpgrade} style={{ background:"none", border:"none", color:`${C.gold}99`, fontFamily:F.body, fontSize:"12px", marginTop:"8px", cursor:"pointer", textDecoration:"underline" }}>Already paid? Sign in with your email</button>
+              <button onClick={onUpgrade} style={{ background:"none", border:"none", color:`${C.gold}99`, fontFamily:F.body, fontSize:"12px", marginTop:"8px", cursor:"pointer", textDecoration:"underline" }}>Already subscribed? Sign in with your email</button>
             </>
           )}
         </div>
@@ -815,7 +815,7 @@ function Paywall({ name, trialDays, returning, onBack, onSignIn }) {
         </div>
         <GoldBtn onClick={onBack} outline>← Not right now</GoldBtn>
         {onSignIn&&(
-          <button onClick={onSignIn} style={{ background:"none", border:"none", color:`${C.gold}99`, fontFamily:F.body, fontSize:"12px", marginTop:"14px", cursor:"pointer", textDecoration:"underline" }}>Already paid? Sign in with your email</button>
+          <button onClick={onSignIn} style={{ background:"none", border:"none", color:`${C.gold}99`, fontFamily:F.body, fontSize:"12px", marginTop:"14px", cursor:"pointer", textDecoration:"underline" }}>Already subscribed? Sign in with your email</button>
         )}
       </Fade>
     </div>
