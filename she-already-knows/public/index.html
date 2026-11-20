@@ -492,9 +492,19 @@ function InputStyle({ value, onChange, placeholder, multi }) {
   return multi ? <textarea value={value} onChange={onChange} placeholder={placeholder} style={{...s,minHeight:"110px"}} {...f}/> : <input value={value} onChange={onChange} placeholder={placeholder} style={s} {...f}/>;
 }
 
+function renderWithItalics(text) {
+  if (!text || typeof text !== "string" || !text.includes("*")) return text;
+  const parts = text.split(/(\*[^*\n]+\*)/g);
+  return parts.map((part, i) =>
+    part.startsWith("*") && part.endsWith("*")
+      ? <em key={i}>{part.slice(1, -1)}</em>
+      : part
+  );
+}
+
 // ─── Journal ─────────────────────────────────────────────────────────────────
 
-function JournalScreen({ onBack }) {
+function JournalScreen({ onBack, onTweak }) {
   const [entries,setEntries]=useState([]);
   const [loading,setLoading]=useState(true);
   const [selected,setSelected]=useState(null);
@@ -592,7 +602,8 @@ function JournalScreen({ onBack }) {
           {selected.situation&&(
             <div style={{ background:"rgba(245,239,230,0.02)", border:"1px solid rgba(200,168,130,0.14)", borderRadius:"12px", padding:"14px 16px", marginBottom:"16px" }}>
               <p style={{ fontFamily:F.body, fontSize:"10px", color:`${C.gold}88`, letterSpacing:"1.5px", textTransform:"uppercase", marginBottom:"7px" }}>She was stuck on</p>
-              <p style={{ fontFamily:F.body, fontSize:"14px", color:C.textDim, lineHeight:"1.75", margin:0, fontStyle:"italic" }}>"{selected.situation}"</p>
+              <p style={{ fontFamily:F.body, fontSize:"14px", color:C.textDim, lineHeight:"1.75", margin:"0 0 10px", fontStyle:"italic" }}>"{selected.situation}"</p>
+              {onTweak&&<button onClick={()=>onTweak({situation:selected.situation,feeling:selected.feeling})} style={{ background:"none", border:"none", color:`${C.gold}88`, fontFamily:F.body, fontSize:"12px", cursor:"pointer", textDecoration:"underline", padding:0 }}>Tweak what you shared & ask again</button>}
             </div>
           )}
 
@@ -603,10 +614,10 @@ function JournalScreen({ onBack }) {
                 <p style={{ fontFamily:F.display, fontSize:"13px", color:C.textFaint, margin:0, fontStyle:"italic" }}>Her higher self</p>
               </div>
               {aiBody.map((para,i)=>(
-                <p key={i} style={{ fontFamily:F.body, fontSize:"14px", color:"rgba(245,239,230,0.88)", lineHeight:"1.9", margin:i===0?"0 0 14px":"14px 0 0" }}>{para}</p>
+                <p key={i} style={{ fontFamily:F.body, fontSize:"14px", color:"rgba(245,239,230,0.88)", lineHeight:"1.9", margin:i===0?"0 0 14px":"14px 0 0" }}>{renderWithItalics(para)}</p>
               ))}
               {aiCloser&&(
-                <p style={{ fontFamily:F.body, fontSize:"14px", color:`${C.gold}EE`, lineHeight:"1.8", fontStyle:"italic", marginTop:"14px", paddingTop:"12px", borderTop:"1px solid rgba(200,168,130,0.12)" }}>{aiCloser}</p>
+                <p style={{ fontFamily:F.body, fontSize:"14px", color:`${C.gold}EE`, lineHeight:"1.8", fontStyle:"italic", marginTop:"14px", paddingTop:"12px", borderTop:"1px solid rgba(200,168,130,0.12)" }}>{renderWithItalics(aiCloser)}</p>
               )}
             </div>
           )}
@@ -623,23 +634,17 @@ function JournalScreen({ onBack }) {
           {versions.length>0&&(
             <div style={{ marginBottom:"20px" }}>
               <button onClick={()=>setShowHistory(h=>!h)} style={{ background:"none", border:"none", color:`${C.gold}88`, fontFamily:F.body, fontSize:"12px", cursor:"pointer", textDecoration:"underline", padding:0 }}>
-                {showHistory?"Hide version history":`Version history (${versions.length})`}
+                {showHistory?"Hide":`What you wrote before (${versions.length})`}
               </button>
               {showHistory&&(
-                <div style={{ marginTop:"10px", display:"flex", flexDirection:"column", gap:"8px" }}>
+                <div style={{ marginTop:"12px", display:"flex", flexDirection:"column", gap:"12px" }}>
                   {versions.map((v,i)=>{
-                    const vDate=new Date(v.saved_at).toLocaleString("en-US",{ month:"short", day:"numeric", hour:"numeric", minute:"2-digit" });
+                    const d=new Date(v.saved_at);
+                    const vDate=d.toLocaleDateString("en-US",{ month:"long", day:"numeric", year:"numeric" })+" at "+d.toLocaleTimeString("en-US",{ hour:"numeric", minute:"2-digit" });
                     return (
-                      <div key={v.id} style={{ background:"rgba(245,239,230,0.02)", border:"1px solid rgba(200,168,130,0.12)", borderRadius:"10px", padding:"12px 14px" }}>
-                        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"6px" }}>
-                          <span style={{ fontFamily:F.body, fontSize:"11px", color:C.textFaint }}>{vDate} · {v.source}</span>
-                          {i>0?(
-                            <button onClick={()=>{ setEditBody(v.body); setShowHistory(false); }} style={{ background:"none", border:"none", color:`${C.gold}88`, fontFamily:F.body, fontSize:"11px", cursor:"pointer", textDecoration:"underline" }}>Restore</button>
-                          ):(
-                            <span style={{ fontFamily:F.body, fontSize:"11px", color:C.textFaint }}>Current</span>
-                          )}
-                        </div>
-                        <p style={{ fontFamily:F.body, fontSize:"12px", color:C.textDim, lineHeight:"1.7", margin:0 }}>{v.body.slice(0,160)}{v.body.length>160?"…":""}</p>
+                      <div key={v.id} style={{ borderLeft:`2px solid rgba(200,168,130,${i===0?0.5:0.18})`, paddingLeft:"14px" }}>
+                        <span style={{ fontFamily:F.body, fontSize:"10px", color:i===0?`${C.gold}99`:C.textFaint, letterSpacing:"0.5px", display:"block", marginBottom:"6px" }}>{vDate}</span>
+                        <p style={{ fontFamily:F.body, fontSize:"13px", color:C.textDim, lineHeight:"1.75", margin:0, fontStyle:"italic" }}>{v.body||"—"}</p>
                       </div>
                     );
                   })}
@@ -736,10 +741,10 @@ function V1Welcome({ onStart }) {
   );
 }
 
-function V1Input({ onContinue, onCancelSubscription }) {
+function V1Input({ onContinue, onCancelSubscription, initialSituation, initialFeeling }) {
   const remembered = loadUser();
   const [name,setName]=useState(remembered?remembered.name:""); const [email,setEmail]=useState(remembered?remembered.email:"");
-  const [situation,setSituation]=useState(""); const [feeling,setFeeling]=useState(null);
+  const [situation,setSituation]=useState(initialSituation||""); const [feeling,setFeeling]=useState(initialFeeling||null);
   const rememberedDiscovery = loadDiscoverySource();
   const [discoverySource,setDiscoverySource]=useState(rememberedDiscovery);
   const [editId,setEditId]=useState(!remembered); // show name/email fields only for new visitors
@@ -919,9 +924,9 @@ SHORT. CONVERSATIONAL. NO HEADERS. NO BULLETS.`;
         <div style={{ background:"rgba(200,168,130,0.05)", border:"1px solid rgba(200,168,130,0.15)", borderRadius:"18px", padding:"22px", marginBottom:"14px" }}>
           {body&&body.split("\n").filter(p=>p.trim().length>3).map((para,i,arr)=>{
             const isLast = !resp?.isAI && i===arr.length-1;
-            return <p key={i} style={{ fontFamily:F.body, fontSize:"15px", color:isLast?`${C.gold}EE`:"rgba(245,239,230,0.9)", lineHeight:"1.9", fontStyle:isLast?"italic":"normal", margin:i===0?"0 0 18px":"18px 0 0", paddingTop:isLast?"16px":0, borderTop:isLast?`1px solid rgba(200,168,130,0.12)`:"none" }}>{para}</p>;
+            return <p key={i} style={{ fontFamily:F.body, fontSize:"15px", color:isLast?`${C.gold}EE`:"rgba(245,239,230,0.9)", lineHeight:"1.9", fontStyle:isLast?"italic":"normal", margin:i===0?"0 0 18px":"18px 0 0", paddingTop:isLast?"16px":0, borderTop:isLast?`1px solid rgba(200,168,130,0.12)`:"none" }}>{renderWithItalics(para)}</p>;
           })}
-          {closer&&<p style={{ fontFamily:F.body, fontSize:"15px", color:`${C.gold}EE`, lineHeight:"1.8", fontStyle:"italic", marginTop:"18px", paddingTop:"16px", borderTop:"1px solid rgba(200,168,130,0.12)" }}>{closer}</p>}
+          {closer&&<p style={{ fontFamily:F.body, fontSize:"15px", color:`${C.gold}EE`, lineHeight:"1.8", fontStyle:"italic", marginTop:"18px", paddingTop:"16px", borderTop:"1px solid rgba(200,168,130,0.12)" }}>{renderWithItalics(closer)}</p>}
         </div>
 
         {resp?.callout&&(
@@ -1298,10 +1303,10 @@ BELIEF: "${allLimiting[0]||"I'm not ready"}"
         <div style={{ opacity:vis?1:0, transform:vis?"none":"translateY(12px)", transition:"all 0.6s ease" }}>
           <div style={{ background:"rgba(200,168,130,0.05)", border:"1px solid rgba(200,168,130,0.15)", borderRadius:"18px", padding:"22px", marginBottom:"14px" }}>
             {(resp?.isAI?resp.aiBody:resp?.beliefFlip||"").split("\n").filter(p=>p.trim().length>3).map((para,i)=>(
-              <p key={i} style={{ fontFamily:F.body, fontSize:"15px", color:"rgba(245,239,230,0.9)", lineHeight:"1.9", margin:i===0?"0 0 18px":"18px 0 0" }}>{para}</p>
+              <p key={i} style={{ fontFamily:F.body, fontSize:"15px", color:"rgba(245,239,230,0.9)", lineHeight:"1.9", margin:i===0?"0 0 18px":"18px 0 0" }}>{renderWithItalics(para)}</p>
             ))}
             {resp?.isAI&&resp.aiCloser&&(
-              <p style={{ fontFamily:F.body, fontSize:"15px", color:`${C.gold}EE`, lineHeight:"1.8", fontStyle:"italic", marginTop:"18px", paddingTop:"16px", borderTop:"1px solid rgba(200,168,130,0.12)" }}>{resp.aiCloser}</p>
+              <p style={{ fontFamily:F.body, fontSize:"15px", color:`${C.gold}EE`, lineHeight:"1.8", fontStyle:"italic", marginTop:"18px", paddingTop:"16px", borderTop:"1px solid rgba(200,168,130,0.12)" }}>{renderWithItalics(resp.aiCloser)}</p>
             )}
           </div>
           <div style={{ background:"rgba(245,239,230,0.02)", border:"1px solid rgba(200,168,130,0.1)", borderRadius:"11px", padding:"13px 15px", marginBottom:"20px", textAlign:"center" }}>
@@ -1619,6 +1624,7 @@ function App() {
   const [data,setData]=useState({});
   const [checkoutMsg,setCheckoutMsg]=useState(null);
   const [loggedIn,setLoggedIn]=useState(false);
+  const [tweakData,setTweakData]=useState({});
 
   useEffect(()=>{
     // Handle the return from Stripe Checkout (?checkout=success|cancel).
@@ -1650,14 +1656,14 @@ function App() {
       )}
       <div style={{ position:"relative", zIndex:1 }}>
         {screen===S.WELCOME&&<V1Welcome onStart={()=>setScreen(S.INPUT)}/>}
-        {screen===S.INPUT&&<V1Input onContinue={d=>{ setData(d); saveUser(d.name, d.email); const discoveryLabel=(DISCOVERY_SOURCES.find(s=>s.id===d.discoverySource)||{}).label; subscribeToFlodesk(d.name, d.email, SEGMENT_APP, discoveryLabel?{discovered_via:discoveryLabel}:undefined); setScreen(isCrisis(d.situation)?S.CRISIS:((PAYWALL_ENABLED&&hasPreviewed())?S.PREVIEW_GATE:S.RESPONSE)); }} onCancelSubscription={()=>setScreen(S.CANCEL)}/>}
+        {screen===S.INPUT&&<V1Input onContinue={d=>{ setTweakData({}); setData(d); saveUser(d.name, d.email); const discoveryLabel=(DISCOVERY_SOURCES.find(s=>s.id===d.discoverySource)||{}).label; subscribeToFlodesk(d.name, d.email, SEGMENT_APP, discoveryLabel?{discovered_via:discoveryLabel}:undefined); setScreen(isCrisis(d.situation)?S.CRISIS:((PAYWALL_ENABLED&&hasPreviewed())?S.PREVIEW_GATE:S.RESPONSE)); }} onCancelSubscription={()=>setScreen(S.CANCEL)} initialSituation={tweakData.situation||""} initialFeeling={tweakData.feeling||null}/>}
         {screen===S.CANCEL&&<CancelSurvey onBack={()=>setScreen(S.WELCOME)} onDone={()=>setScreen(S.WELCOME)}/>}
         {screen===S.CRISIS&&<CrisisScreen onContinue={()=>setScreen(S.RESPONSE)}/>}
         {screen===S.PREVIEW_GATE&&<PreviewGate initData={data} onUnlocked={()=>setScreen(S.RESPONSE)} onBack={()=>{ setData({}); setScreen(S.WELCOME); }}/>}
         {screen===S.RESPONSE&&<V1Response data={data} onUpgrade={()=>setScreen(S.V2)} onRestart={()=>{ setData({}); setScreen(S.WELCOME); }}/>}
         {screen===S.V2&&<V2App initData={data} onFinish={()=>{ setData({}); setScreen(S.WELCOME); }}/>}
         {screen===S.FOUNDING_MEMBER&&<FoundingMemberPrompt onDone={()=>setScreen(S.WELCOME)}/>}
-        {screen===S.JOURNAL&&<JournalScreen onBack={()=>setScreen(S.WELCOME)}/>}
+        {screen===S.JOURNAL&&<JournalScreen onBack={()=>setScreen(S.WELCOME)} onTweak={({situation,feeling})=>{ setTweakData({situation,feeling}); setScreen(S.INPUT); }}/>}
       </div>
     </div>
   );
