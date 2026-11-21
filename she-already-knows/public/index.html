@@ -1231,13 +1231,13 @@ function V2App({ initData, onFinish, linkedEntryId }) {
     </div>
   );
 
-  if(screen===V2S.COACH) return <V2Coach data={{...initData,...d}} onDone={()=>go(V2S.BREAKDOWN)}/>;
+  if(screen===V2S.COACH) return <V2Coach data={{...initData,...d}} onDone={()=>go(V2S.BREAKDOWN)} linkedEntryId={linkedEntryId}/>;
   if(screen===V2S.BREAKDOWN) return <V2Breakdown data={{...initData,...d}} onDone={()=>go(V2S.DONE)}/>;
   if(screen===V2S.DONE) return <V2Done name={initData.name} email={initData.email} onRestart={onFinish}/>;
   return null;
 }
 
-function V2Coach({ data, onDone }) {
+function V2Coach({ data, onDone, linkedEntryId }) {
   const [resp,setResp]=useState(null); const [loading,setLoading]=useState(true); const [vis,setVis]=useState(false);
   const pat = detectPatternFromSpirals(data.spirals||[]);
   const pm = PATTERN_META[pat];
