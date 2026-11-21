@@ -21,7 +21,7 @@ exports.handler = async function (event) {
   if (action === "list") {
     const { data: entries, error } = await db
       .from("journal_entries")
-      .select("id, situation, feeling, ai_response, body, created_at, updated_at, journal_entry_versions(id, saved_at, body, source)")
+      .select("id, situation, feeling, ai_response, ai_response_v2, body, created_at, updated_at, journal_entry_versions(id, saved_at, body, source)")
       .eq("user_email", email)
       .is("deleted_at", null)
       .order("created_at", { ascending: false });
@@ -62,7 +62,7 @@ exports.handler = async function (event) {
 
   // ── update — rewrite body and append a version row (old body is never lost) ───
   if (action === "update") {
-    const { entry_id, entry_body, source } = body;
+    const { entry_id, entry_body, ai_response_v2, source } = body;
     if (!entry_id) return json(400, { error: "entry_id required" });
     // Ownership check
     const { data: existing } = await db
@@ -73,16 +73,25 @@ exports.handler = async function (event) {
       .is("deleted_at", null)
       .maybeSingle();
     if (!existing) return json(404, { error: "Entry not found" });
+    const updates = {};
+    if (entry_body !== undefined) updates.body = entry_body;
+    if (ai_response_v2 !== undefined) updates.ai_response_v2 = ai_response_v2;
+    if (Object.keys(updates).length === 0) return json(400, { error: "Nothing to update" });
     const { error: uErr } = await db
       .from("journal_entries")
-      .update({ body: entry_body })
+      .update(updates)
       .eq("id", entry_id);
     if (uErr) return json(500, { error: uErr.message });
-    const { data: version } = await db
-      .from("journal_entry_versions")
-      .insert({ entry_id, body: entry_body, source: source || "manual" })
-      .select()
-      .single();
+    // Only create a version row when the user's reflection text changed
+    let version = null;
+    if (entry_body !== undefined) {
+      const { data: v } = await db
+        .from("journal_entry_versions")
+        .insert({ entry_id, body: entry_body, source: source || "manual" })
+        .select()
+        .single();
+      version = v;
+    }
     return json(200, { ok: true, version });
   }
 

@@ -583,6 +583,10 @@ function JournalScreen({ onBack, onTweak }) {
     const aiParas=selected.ai_response?selected.ai_response.split("\n").filter(p=>p.trim().length>3):[];
     const aiCloser=aiParas.length>1?aiParas[aiParas.length-1]:null;
     const aiBody=aiCloser?aiParas.slice(0,-1):aiParas;
+    const aiParasV2=selected.ai_response_v2?selected.ai_response_v2.split("\n").filter(p=>p.trim().length>3):[];
+    const aiCloserV2=aiParasV2.length>1?aiParasV2[aiParasV2.length-1]:null;
+    const aiBodyV2=aiCloserV2?aiParasV2.slice(0,-1):aiParasV2;
+    const hasDeepDive=aiParasV2.length>0;
 
     return (
       <div style={{ padding:"40px 24px 60px", maxWidth:"440px", margin:"0 auto" }}>
@@ -611,13 +615,27 @@ function JournalScreen({ onBack, onTweak }) {
             <div style={{ background:"rgba(200,168,130,0.05)", border:"1px solid rgba(200,168,130,0.15)", borderRadius:"18px", padding:"22px", marginBottom:"16px" }}>
               <div style={{ display:"flex", alignItems:"center", gap:"8px", marginBottom:"14px" }}>
                 <div style={{ width:"28px", height:"28px", borderRadius:"50%", border:`1px solid ${C.gold}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:"12px", flexShrink:0 }}>❆</div>
-                <p style={{ fontFamily:F.display, fontSize:"13px", color:C.textFaint, margin:0, fontStyle:"italic" }}>Her higher self</p>
+                <p style={{ fontFamily:F.display, fontSize:"13px", color:C.textFaint, margin:0, fontStyle:"italic" }}>{hasDeepDive?"Initial insight":"Her higher self"}</p>
               </div>
               {aiBody.map((para,i)=>(
                 <p key={i} style={{ fontFamily:F.body, fontSize:"14px", color:"rgba(245,239,230,0.88)", lineHeight:"1.9", margin:i===0?"0 0 14px":"14px 0 0" }}>{renderWithItalics(para)}</p>
               ))}
               {aiCloser&&(
                 <p style={{ fontFamily:F.body, fontSize:"14px", color:`${C.gold}EE`, lineHeight:"1.8", fontStyle:"italic", marginTop:"14px", paddingTop:"12px", borderTop:"1px solid rgba(200,168,130,0.12)" }}>{renderWithItalics(aiCloser)}</p>
+              )}
+            </div>
+          )}
+          {hasDeepDive&&(
+            <div style={{ background:"rgba(200,168,130,0.05)", border:"1px solid rgba(200,168,130,0.15)", borderRadius:"18px", padding:"22px", marginBottom:"16px" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:"8px", marginBottom:"14px" }}>
+                <div style={{ width:"28px", height:"28px", borderRadius:"50%", border:`1px solid ${C.gold}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:"12px", flexShrink:0 }}>✦</div>
+                <p style={{ fontFamily:F.display, fontSize:"13px", color:C.textFaint, margin:0, fontStyle:"italic" }}>Going deeper</p>
+              </div>
+              {aiBodyV2.map((para,i)=>(
+                <p key={i} style={{ fontFamily:F.body, fontSize:"14px", color:"rgba(245,239,230,0.88)", lineHeight:"1.9", margin:i===0?"0 0 14px":"14px 0 0" }}>{renderWithItalics(para)}</p>
+              ))}
+              {aiCloserV2&&(
+                <p style={{ fontFamily:F.body, fontSize:"14px", color:`${C.gold}EE`, lineHeight:"1.8", fontStyle:"italic", marginTop:"14px", paddingTop:"12px", borderTop:"1px solid rgba(200,168,130,0.12)" }}>{renderWithItalics(aiCloserV2)}</p>
               )}
             </div>
           )}
@@ -709,9 +727,10 @@ function JournalScreen({ onBack, onTweak }) {
                   </div>
                   {preview?<p style={{ fontFamily:F.body, fontSize:"13px", color:C.textDim, lineHeight:"1.65", margin:0, fontStyle:entry.body?"normal":"italic" }}>{preview}</p>:<p style={{ fontFamily:F.body, fontSize:"13px", color:C.textFaint, margin:0, fontStyle:"italic" }}>Session entry — tap to open</p>}
                   {entry.ai_response&&(
-                    <div style={{ marginTop:"6px", display:"flex", alignItems:"center", gap:"5px" }}>
+                    <div style={{ marginTop:"6px", display:"flex", alignItems:"center", gap:"8px" }}>
                       <span style={{ fontSize:"10px", color:C.gold }}>❆</span>
                       <span style={{ fontFamily:F.body, fontSize:"10px", color:`${C.gold}88` }}>Includes AI insight</span>
+                      {entry.ai_response_v2&&<span style={{ fontFamily:F.body, fontSize:"10px", color:`${C.gold}BB`, background:"rgba(200,168,130,0.12)", borderRadius:"100px", padding:"2px 8px" }}>Deep dive</span>}
                     </div>
                   )}
                 </button>
@@ -813,7 +832,7 @@ function V1Input({ onContinue, onCancelSubscription, initialSituation, initialFe
   );
 }
 
-function V1Response({ data, onUpgrade, onRestart }) {
+function V1Response({ data, onUpgrade, onRestart, onEntrySaved }) {
   const [resp,setResp]=useState(null); const [loading,setLoading]=useState(true); const [vis,setVis]=useState(false);
   const [isSubscriber,setIsSubscriber]=useState(false);
   // Gates rendering so the CTA copy never flashes the wrong version while the
@@ -887,11 +906,14 @@ SHORT. CONVERSATIONAL. NO HEADERS. NO BULLETS.`;
           // Auto-save to journal for logged-in subscribers (best-effort, never blocks)
           try {
             const token = await authToken();
-            if (token) callJournal("save",{
-              situation: data.situation, feeling: data.feeling,
-              ai_response: paras.join("\n\n")+(closer?"\n\n"+closer:""),
-              entry_body:"", source:"auto"
-            });
+            if (token) {
+              const r = await callJournal("save",{
+                situation: data.situation, feeling: data.feeling,
+                ai_response: paras.join("\n\n")+(closer?"\n\n"+closer:""),
+                entry_body:"", source:"auto"
+              });
+              if (r&&r.entry&&r.entry.id&&onEntrySaved) onEntrySaved(r.entry.id);
+            }
           } catch(e) {}
         } else { setResp(local); }
       } catch(e) { setResp(local); }
@@ -1106,7 +1128,7 @@ function V2Checking() {
   );
 }
 
-function V2App({ initData, onFinish }) {
+function V2App({ initData, onFinish, linkedEntryId }) {
   // Skip the old "unlock deeper work" gate screen — clicking the trial CTA on the
   // response screen goes straight into the login/paywall check.
   const [screen,setScreen]=useState(V2S.CHECKING);
@@ -1266,11 +1288,17 @@ BELIEF: "${allLimiting[0]||"I'm not ready"}"
           // Auto-save to journal for logged-in subscribers (best-effort)
           try {
             const token = await authToken();
-            if (token) callJournal("save",{
-              situation: data.situation, feeling: data.feeling,
-              ai_response: paras.join("\n\n")+(closer?"\n\n"+closer:""),
-              entry_body:"", source:"auto"
-            });
+            if (token) {
+              const aiResp = paras.join("\n\n")+(closer?"\n\n"+closer:"");
+              if (linkedEntryId) {
+                callJournal("update",{ entry_id:linkedEntryId, ai_response_v2:aiResp });
+              } else {
+                callJournal("save",{
+                  situation: data.situation, feeling: data.feeling,
+                  ai_response: aiResp, entry_body:"", source:"auto"
+                });
+              }
+            }
           } catch(e) {}
         } else { setResp(local); }
       } catch(e) { setResp(local); }
@@ -1625,6 +1653,7 @@ function App() {
   const [checkoutMsg,setCheckoutMsg]=useState(null);
   const [loggedIn,setLoggedIn]=useState(false);
   const [tweakData,setTweakData]=useState({});
+  const [v1JournalId,setV1JournalId]=useState(null);
 
   useEffect(()=>{
     // Handle the return from Stripe Checkout (?checkout=success|cancel).
@@ -1639,7 +1668,7 @@ function App() {
   },[]);
 
   // Hide journal nav while the user is mid-session so it doesn't distract
-  const IN_FLOW = screen===S.RESPONSE||screen===S.V2||screen===S.CRISIS||screen===S.PREVIEW_GATE||screen===S.FOUNDING_MEMBER||screen===S.CANCEL;
+  const HIDE_JOURNAL_NAV = screen===S.JOURNAL||screen===S.PREVIEW_GATE||screen===S.FOUNDING_MEMBER;
 
   return (
     <div style={{ minHeight:"100vh", background:C.bg, backgroundImage:`radial-gradient(ellipse at 15% 15%, rgba(200,168,130,0.07) 0%, transparent 55%), radial-gradient(ellipse at 85% 85%, rgba(139,110,80,0.05) 0%, transparent 55%)`, position:"relative", overflow:"hidden" }}>
@@ -1649,7 +1678,7 @@ function App() {
       {checkoutMsg&&(
         <div onClick={()=>setCheckoutMsg(null)} style={{ position:"fixed", top:"16px", left:"50%", transform:"translateX(-50%)", zIndex:10, background:"rgba(200,168,130,0.12)", border:`1px solid ${C.gold}`, borderRadius:"100px", padding:"10px 20px", color:C.text, fontFamily:F.body, fontSize:"13px", cursor:"pointer", backdropFilter:"blur(8px)" }}>{checkoutMsg}</div>
       )}
-      {loggedIn&&!IN_FLOW&&screen!==S.JOURNAL&&(
+      {loggedIn&&!HIDE_JOURNAL_NAV&&(
         <div style={{ position:"fixed", top:"16px", right:"16px", zIndex:9 }}>
           <button onClick={()=>setScreen(S.JOURNAL)} style={{ background:"rgba(200,168,130,0.1)", border:"1px solid rgba(200,168,130,0.3)", borderRadius:"100px", padding:"8px 16px", color:C.gold, fontFamily:F.body, fontSize:"11px", letterSpacing:"1.5px", textTransform:"uppercase", cursor:"pointer", backdropFilter:"blur(8px)" }}>Journal ✦</button>
         </div>
@@ -1660,8 +1689,8 @@ function App() {
         {screen===S.CANCEL&&<CancelSurvey onBack={()=>setScreen(S.WELCOME)} onDone={()=>setScreen(S.WELCOME)}/>}
         {screen===S.CRISIS&&<CrisisScreen onContinue={()=>setScreen(S.RESPONSE)}/>}
         {screen===S.PREVIEW_GATE&&<PreviewGate initData={data} onUnlocked={()=>setScreen(S.RESPONSE)} onBack={()=>{ setData({}); setScreen(S.WELCOME); }}/>}
-        {screen===S.RESPONSE&&<V1Response data={data} onUpgrade={()=>setScreen(S.V2)} onRestart={()=>{ setData({}); setScreen(S.WELCOME); }}/>}
-        {screen===S.V2&&<V2App initData={data} onFinish={()=>{ setData({}); setScreen(S.WELCOME); }}/>}
+        {screen===S.RESPONSE&&<V1Response data={data} onUpgrade={()=>setScreen(S.V2)} onEntrySaved={(id)=>setV1JournalId(id)} onRestart={()=>{ setData({}); setV1JournalId(null); setScreen(S.WELCOME); }}/>}
+        {screen===S.V2&&<V2App initData={data} linkedEntryId={v1JournalId} onFinish={()=>{ setData({}); setV1JournalId(null); setScreen(S.WELCOME); }}/>}
         {screen===S.FOUNDING_MEMBER&&<FoundingMemberPrompt onDone={()=>setScreen(S.WELCOME)}/>}
         {screen===S.JOURNAL&&<JournalScreen onBack={()=>setScreen(S.WELCOME)} onTweak={({situation,feeling})=>{ setTweakData({situation,feeling}); setScreen(S.INPUT); }}/>}
       </div>

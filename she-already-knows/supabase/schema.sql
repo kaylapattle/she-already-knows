@@ -70,3 +70,7 @@ create trigger subscribers_set_updated_at
 -- cannot read or write these tables directly from the browser.
 alter table subscribers enable row level security;
 alter table beta_emails enable row level security;
+
+-- V2 deeper-dive response stored on the same journal entry as the V1 response.
+-- Run after the journal_entries table exists (see seed-journal.sql or manual setup).
+alter table journal_entries add column if not exists ai_response_v2 text;
