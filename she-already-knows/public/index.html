@@ -182,7 +182,7 @@ function buildMemoryContext(entries) {
 }
 </script>
 <script type="text/babel">
-const {useState, useEffect} = React;
+const {useState, useEffect, useRef} = React;
 
 
 
@@ -492,6 +492,41 @@ function InputStyle({ value, onChange, placeholder, multi }) {
   return multi ? <textarea value={value} onChange={onChange} placeholder={placeholder} style={{...s,minHeight:"110px"}} {...f}/> : <input value={value} onChange={onChange} placeholder={placeholder} style={s} {...f}/>;
 }
 
+function FollowUpThread({ messages, onSend, sending }) {
+  const [text,setText]=useState("");
+  function handleSend() {
+    const t=text.trim();
+    if (!t||sending) return;
+    setText("");
+    onSend(t);
+  }
+  return (
+    <div style={{ marginTop:"28px", paddingTop:"24px", borderTop:"1px solid rgba(200,168,130,0.1)" }}>
+      {messages.length>0&&(
+        <div style={{ display:"flex", flexDirection:"column", gap:"18px", marginBottom:"24px" }}>
+          {messages.map((msg,i)=>msg.role==="user"?(
+            <div key={i} style={{ display:"flex", justifyContent:"flex-end" }}>
+              <p style={{ fontFamily:F.body, fontSize:"14px", color:C.textDim, lineHeight:"1.75", fontStyle:"italic", maxWidth:"88%", margin:0, textAlign:"right" }}>&#8220;{msg.content}&#8221;</p>
+            </div>
+          ):(
+            <div key={i} style={{ background:"rgba(200,168,130,0.05)", border:"1px solid rgba(200,168,130,0.14)", borderRadius:"16px", padding:"18px 20px" }}>
+              {msg.content.split("\n").filter(p=>p.trim().length>2).map((para,j,arr)=>{
+                const isLast=j===arr.length-1&&arr.length>1;
+                return <p key={j} style={{ fontFamily:F.body, fontSize:"14px", color:isLast?`${C.gold}EE`:"rgba(245,239,230,0.88)", lineHeight:"1.9", fontStyle:isLast?"italic":"normal", margin:j===0?0:"12px 0 0", ...(isLast?{paddingTop:"12px",borderTop:"1px solid rgba(200,168,130,0.1)"}:{}) }}>{renderWithItalics(para)}</p>;
+              })}
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{ display:"flex", gap:"10px", alignItems:"flex-end" }}>
+        <textarea value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); handleSend(); } }} placeholder="Reply, push back, or ask a follow-up…" disabled={sending} rows={2} style={{ flex:1, background:"rgba(245,239,230,0.03)", border:"1px solid rgba(200,168,130,0.2)", borderRadius:"12px", padding:"12px 14px", color:C.text, fontFamily:F.body, fontSize:"14px", lineHeight:"1.7", outline:"none", resize:"none", boxSizing:"border-box", transition:"border-color 0.2s", opacity:sending?0.6:1 }} onFocus={e=>e.target.style.borderColor="rgba(200,168,130,0.5)"} onBlur={e=>e.target.style.borderColor="rgba(200,168,130,0.2)"}/>
+        <button onClick={handleSend} disabled={!text.trim()||sending} style={{ background:text.trim()&&!sending?C.gold:"rgba(200,168,130,0.15)", border:"none", borderRadius:"10px", width:"40px", height:"40px", display:"flex", alignItems:"center", justifyContent:"center", cursor:text.trim()&&!sending?"pointer":"default", color:text.trim()&&!sending?"#1a1510":C.textFaint, fontSize:"16px", flexShrink:0, transition:"all 0.2s", alignSelf:"center" }}>→</button>
+      </div>
+      {sending&&<p style={{ fontFamily:F.body, fontSize:"12px", color:C.textFaint, fontStyle:"italic", marginTop:"10px" }}>She’s sitting with what you said…</p>}
+    </div>
+  );
+}
+
 function renderWithItalics(text) {
   if (!text || typeof text !== "string" || !text.includes("*")) return text;
   const parts = text.split(/(\*[^*\n]+\*)/g);
@@ -515,8 +550,11 @@ function JournalScreen({ onBack, onTweak }) {
   const [newMode,setNewMode]=useState(false);
   const [newBody,setNewBody]=useState("");
   const [savingNew,setSavingNew]=useState(false);
+  const [localMessages,setLocalMessages]=useState([]);
+  const [sendingReply,setSendingReply]=useState(false);
 
   useEffect(()=>{ loadEntries(); },[]);
+  useEffect(()=>{ setLocalMessages(Array.isArray(selected?.messages)?selected.messages:[]); },[selected?.id]);
 
   async function loadEntries() {
     setLoading(true);
@@ -566,6 +604,30 @@ function JournalScreen({ onBack, onTweak }) {
       }
     } catch(e) {}
     setSavingNew(false);
+  }
+
+  async function handleJournalSend(userText) {
+    if (!selected) return;
+    setSendingReply(true);
+    const aiText=(selected.ai_response_v2||selected.ai_response||"");
+    const claudeMessages=[
+      {role:"user",content:`You are her higher self — the version that already did the inner work. You are continuing a conversation about a past reflection.\n\nRULES: Mirror her emotional language. Be specific, intimate, honest. Push back if she deflects. Short paragraphs, conversational. Never generic.\n${selected.situation?`HER SITUATION: "${selected.situation}"\n`:""}`},
+      {role:"assistant",content:aiText},
+      ...localMessages,
+      {role:"user",content:userText}
+    ];
+    const withUser=[...localMessages,{role:"user",content:userText}];
+    setLocalMessages(withUser);
+    try {
+      const res=await callClaude(claudeMessages,500);
+      const reply=res?.content?.map(c=>c.text||"").join("").trim()||"";
+      if (reply) {
+        const withBoth=[...withUser,{role:"assistant",content:reply}];
+        setLocalMessages(withBoth);
+        try { callJournal("append_messages",{entry_id:selected.id,messages:[{role:"user",content:userText},{role:"assistant",content:reply}]}); } catch(e){}
+      }
+    } catch(e) {}
+    setSendingReply(false);
   }
 
   if (loading) return (
@@ -640,7 +702,11 @@ function JournalScreen({ onBack, onTweak }) {
             </div>
           )}
 
-          <div style={{ marginBottom:"12px" }}>
+          {(selected.ai_response||selected.ai_response_v2)&&(
+            <FollowUpThread messages={localMessages} onSend={handleJournalSend} sending={sendingReply}/>
+          )}
+
+          <div style={{ marginTop:"28px", marginBottom:"12px" }}>
             <label style={{ display:"block", fontFamily:F.body, fontSize:"10px", color:`${C.gold}99`, letterSpacing:"1.5px", textTransform:"uppercase", marginBottom:"8px" }}>Your reflection</label>
             <textarea value={editBody} onChange={e=>setEditBody(e.target.value)} placeholder="Write whatever this brought up for you…" style={{ width:"100%", background:"rgba(245,239,230,0.03)", border:"1px solid rgba(200,168,130,0.2)", borderRadius:"12px", padding:"14px 16px", color:C.text, fontFamily:F.body, fontSize:"14px", lineHeight:"1.8", outline:"none", resize:"none", minHeight:"120px", boxSizing:"border-box" }} onFocus={e=>e.target.style.borderColor="rgba(200,168,130,0.5)"} onBlur={e=>e.target.style.borderColor="rgba(200,168,130,0.2)"}/>
           </div>
@@ -838,6 +904,10 @@ function V1Response({ data, onUpgrade, onRestart, onEntrySaved }) {
   // Gates rendering so the CTA copy never flashes the wrong version while the
   // access check is still in flight. Defaults true when the paywall is off.
   const [accessChecked,setAccessChecked]=useState(!PAYWALL_ENABLED);
+  const [messages,setMessages]=useState([]); const [sending,setSending]=useState(false);
+  const [entryId,setEntryId]=useState(null);
+  const entryIdRef=useRef(null);
+  const memCtxRef=useRef("");
 
   // If they already have an active trial/subscription, the CTA copy shouldn't
   // pitch them on creating an account / starting a trial they already have.
@@ -867,6 +937,7 @@ function V1Response({ data, onUpgrade, onRestart, onEntrySaved }) {
     (async () => {
       const memory = await fetchJournalMemory();
       const memCtx = buildMemoryContext(memory);
+      memCtxRef.current = memCtx;
 
       const prompt = `You are ${data.name}'s higher self.
 
@@ -912,7 +983,7 @@ SHORT. CONVERSATIONAL. NO HEADERS. NO BULLETS.`;
                 ai_response: paras.join("\n\n")+(closer?"\n\n"+closer:""),
                 entry_body:"", source:"auto"
               });
-              if (r&&r.entry&&r.entry.id&&onEntrySaved) onEntrySaved(r.entry.id);
+              if (r&&r.entry&&r.entry.id) { setEntryId(r.entry.id); entryIdRef.current=r.entry.id; if (onEntrySaved) onEntrySaved(r.entry.id); }
             }
           } catch(e) {}
         } else { setResp(local); }
@@ -931,6 +1002,30 @@ SHORT. CONVERSATIONAL. NO HEADERS. NO BULLETS.`;
   const body = resp?.isAI ? resp.aiBody : resp?.opening;
   const closer = resp?.isAI ? resp.aiCloser : null;
   const patColor = resp?.patternColor || C.gold;
+
+  async function handleSendV1(userText) {
+    setSending(true);
+    const aiText=(resp?.aiBody||"")+(resp?.aiCloser?"\n\n"+resp.aiCloser:"");
+    const feelingLabel=data.feeling?((FEELINGS.find(f=>f.id===data.feeling)||{}).label||"just stuck"):"just stuck";
+    const claudeMessages=[
+      {role:"user",content:`You are ${data.name}'s higher self — the version of her that already did the inner work. You are continuing a conversation.\n\nRULES: Mirror her emotional language. Be specific, intimate, honest. Push back if she deflects. Short paragraphs, conversational. Never generic.\n${memCtxRef.current}HER SITUATION: "${data.situation}"\nEMOTIONAL SIGNAL: ${feelingLabel}`},
+      {role:"assistant",content:aiText},
+      ...messages,
+      {role:"user",content:userText}
+    ];
+    const withUser=[...messages,{role:"user",content:userText}];
+    setMessages(withUser);
+    try {
+      const r=await callClaude(claudeMessages,500);
+      const reply=r?.content?.map(c=>c.text||"").join("").trim()||"";
+      if (reply) {
+        const withBoth=[...withUser,{role:"assistant",content:reply}];
+        setMessages(withBoth);
+        if (entryIdRef.current) try { callJournal("append_messages",{entry_id:entryIdRef.current,messages:[{role:"user",content:userText},{role:"assistant",content:reply}]}); } catch(e){}
+      }
+    } catch(e) {}
+    setSending(false);
+  }
 
   return (
     <div style={{ padding:"40px 24px", maxWidth:"440px", margin:"0 auto" }}>
@@ -964,6 +1059,10 @@ SHORT. CONVERSATIONAL. NO HEADERS. NO BULLETS.`;
           The goal isn't to use this forever.<br/>
           <span style={{color:`${C.gold}66`}}>It's to get to a point where you don't need it.</span>
         </p>
+
+        {isSubscriber && resp?.isAI && (
+          <FollowUpThread messages={messages} onSend={handleSendV1} sending={sending}/>
+        )}
 
         <div style={{ background:"rgba(200,168,130,0.07)", border:"1px solid rgba(200,168,130,0.22)", borderRadius:"16px", padding:"20px", marginBottom:"12px" }}>
           {isSubscriber ? (
@@ -1239,6 +1338,10 @@ function V2App({ initData, onFinish, linkedEntryId }) {
 
 function V2Coach({ data, onDone, linkedEntryId }) {
   const [resp,setResp]=useState(null); const [loading,setLoading]=useState(true); const [vis,setVis]=useState(false);
+  const [messages,setMessages]=useState([]); const [sending,setSending]=useState(false);
+  const [entryId,setEntryId]=useState(linkedEntryId||null);
+  const entryIdRef=useRef(linkedEntryId||null);
+  const memCtxRef=useRef(""); const respRef=useRef(null);
   const pat = detectPatternFromSpirals(data.spirals||[]);
   const pm = PATTERN_META[pat];
 
@@ -1251,6 +1354,7 @@ function V2Coach({ data, onDone, linkedEntryId }) {
     (async () => {
       const memory = await fetchJournalMemory();
       const memCtx = buildMemoryContext(memory);
+      memCtxRef.current = memCtx;
 
       const prompt = `You are ${data.name}'s higher self — the version that already did the inner work.
 
@@ -1284,19 +1388,24 @@ BELIEF: "${allLimiting[0]||"I'm not ready"}"
         if (text&&text.length>200) {
           const paras = text.split("\n").filter(p=>p.trim().length>3);
           const closer = paras.pop();
-          setResp({...local,aiBody:paras.join("\n\n"),aiCloser:closer,isAI:true});
+          const built = {...local,aiBody:paras.join("\n\n"),aiCloser:closer,isAI:true};
+          setResp(built); respRef.current = built;
           // Auto-save to journal for logged-in subscribers (best-effort)
           try {
             const token = await authToken();
             if (token) {
               const aiResp = paras.join("\n\n")+(closer?"\n\n"+closer:"");
               if (linkedEntryId) {
-                callJournal("update",{ entry_id:linkedEntryId, ai_response_v2:aiResp });
+                await callJournal("update",{ entry_id:linkedEntryId, ai_response_v2:aiResp });
+                setEntryId(linkedEntryId); entryIdRef.current=linkedEntryId;
               } else {
-                callJournal("save",{
-                  situation: data.situation, feeling: data.feeling,
-                  ai_response: aiResp, entry_body:"", source:"auto"
-                });
+                try {
+                  const sr = await callJournal("save",{
+                    situation: data.situation, feeling: data.feeling,
+                    ai_response: aiResp, entry_body:"", source:"auto"
+                  });
+                  if (sr&&sr.entry&&sr.entry.id) { setEntryId(sr.entry.id); entryIdRef.current=sr.entry.id; }
+                } catch(e2) {}
               }
             }
           } catch(e) {}
@@ -1305,6 +1414,31 @@ BELIEF: "${allLimiting[0]||"I'm not ready"}"
       setLoading(false); setTimeout(()=>setVis(true),150);
     })();
   },[]);
+
+  async function handleSendV2(userText) {
+    setSending(true);
+    const r=respRef.current;
+    const aiText=r?(r.aiBody||"")+(r.aiCloser?"\n\n"+r.aiCloser:""):"";
+    const claudeMessages=[
+      {role:"user",content:`You are ${data.name}'s higher self — the version of her that already did the inner work. You are continuing a deeper conversation.\n\nRULES: Mirror her emotional language. Be specific, intimate, honest. Push back if she deflects. Short paragraphs, conversational. Never generic.\n${memCtxRef.current}HER SITUATION: "${data.situation}"\nHER GOAL: "${data.goal}"`},
+      {role:"assistant",content:aiText},
+      ...messages,
+      {role:"user",content:userText}
+    ];
+    const withUser=[...messages,{role:"user",content:userText}];
+    setMessages(withUser);
+    try {
+      const res=await callClaude(claudeMessages,500);
+      const reply=res?.content?.map(c=>c.text||"").join("").trim()||"";
+      if (reply) {
+        const withBoth=[...withUser,{role:"assistant",content:reply}];
+        setMessages(withBoth);
+        const eid=entryIdRef.current;
+        if (eid) try { callJournal("append_messages",{entry_id:eid,messages:[{role:"user",content:userText},{role:"assistant",content:reply}]}); } catch(e){}
+      }
+    } catch(e) {}
+    setSending(false);
+  }
 
   return (
     <div style={{ padding:"48px 24px", maxWidth:"440px", margin:"0 auto" }}>
@@ -1343,7 +1477,10 @@ BELIEF: "${allLimiting[0]||"I'm not ready"}"
               <span style={{color:`${C.gold}55`}}>That's what building self-trust looks like.</span>
             </p>
           </div>
-          <GoldBtn onClick={onDone}>Here's what this means →</GoldBtn>
+          <FollowUpThread messages={messages} onSend={handleSendV2} sending={sending}/>
+          <div style={{marginTop:"24px"}}>
+            <GoldBtn onClick={onDone}>Here's what this means →</GoldBtn>
+          </div>
         </div>
       )}
     </div>

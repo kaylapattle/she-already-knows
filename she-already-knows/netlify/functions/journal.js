@@ -21,7 +21,7 @@ exports.handler = async function (event) {
   if (action === "list") {
     const { data: entries, error } = await db
       .from("journal_entries")
-      .select("id, situation, feeling, ai_response, ai_response_v2, body, created_at, updated_at, journal_entry_versions(id, saved_at, body, source)")
+      .select("id, situation, feeling, ai_response, ai_response_v2, body, messages, created_at, updated_at, journal_entry_versions(id, saved_at, body, source)")
       .eq("user_email", email)
       .is("deleted_at", null)
       .order("created_at", { ascending: false });
@@ -120,6 +120,27 @@ exports.handler = async function (event) {
       .limit(lim);
     if (mErr) return json(500, { error: mErr.message });
     return json(200, { entries: entries || [] });
+  }
+
+  // ── append_messages — push new user+assistant turn pairs onto messages array ──
+  if (action === "append_messages") {
+    const { entry_id, messages: newMsgs } = body;
+    if (!entry_id || !Array.isArray(newMsgs) || newMsgs.length === 0) return json(400, { error: "entry_id and messages required" });
+    const { data: existing } = await db
+      .from("journal_entries")
+      .select("id, messages")
+      .eq("id", entry_id)
+      .eq("user_email", email)
+      .is("deleted_at", null)
+      .maybeSingle();
+    if (!existing) return json(404, { error: "Entry not found" });
+    const merged = [...(existing.messages || []), ...newMsgs];
+    const { error: aErr } = await db
+      .from("journal_entries")
+      .update({ messages: merged })
+      .eq("id", entry_id);
+    if (aErr) return json(500, { error: aErr.message });
+    return json(200, { ok: true });
   }
 
   return json(400, { error: "Unknown action" });
