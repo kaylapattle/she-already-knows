@@ -554,7 +554,7 @@ function JournalScreen({ onBack, onTweak }) {
   const [sendingReply,setSendingReply]=useState(false);
 
   useEffect(()=>{ loadEntries(); },[]);
-  useEffect(()=>{ setLocalMessages(selected?.messages||[]); },[selected?.id]);
+  useEffect(()=>{ setLocalMessages(Array.isArray(selected?.messages)?selected.messages:[]); },[selected?.id]);
 
   async function loadEntries() {
     setLoading(true);
@@ -906,6 +906,7 @@ function V1Response({ data, onUpgrade, onRestart, onEntrySaved }) {
   const [accessChecked,setAccessChecked]=useState(!PAYWALL_ENABLED);
   const [messages,setMessages]=useState([]); const [sending,setSending]=useState(false);
   const [entryId,setEntryId]=useState(null);
+  const entryIdRef=useRef(null);
   const memCtxRef=useRef("");
 
   // If they already have an active trial/subscription, the CTA copy shouldn't
@@ -982,7 +983,7 @@ SHORT. CONVERSATIONAL. NO HEADERS. NO BULLETS.`;
                 ai_response: paras.join("\n\n")+(closer?"\n\n"+closer:""),
                 entry_body:"", source:"auto"
               });
-              if (r&&r.entry&&r.entry.id) { setEntryId(r.entry.id); if (onEntrySaved) onEntrySaved(r.entry.id); }
+              if (r&&r.entry&&r.entry.id) { setEntryId(r.entry.id); entryIdRef.current=r.entry.id; if (onEntrySaved) onEntrySaved(r.entry.id); }
             }
           } catch(e) {}
         } else { setResp(local); }
@@ -1020,7 +1021,7 @@ SHORT. CONVERSATIONAL. NO HEADERS. NO BULLETS.`;
       if (reply) {
         const withBoth=[...withUser,{role:"assistant",content:reply}];
         setMessages(withBoth);
-        if (entryId) try { callJournal("append_messages",{entry_id:entryId,messages:[{role:"user",content:userText},{role:"assistant",content:reply}]}); } catch(e){}
+        if (entryIdRef.current) try { callJournal("append_messages",{entry_id:entryIdRef.current,messages:[{role:"user",content:userText},{role:"assistant",content:reply}]}); } catch(e){}
       }
     } catch(e) {}
     setSending(false);
@@ -1339,6 +1340,7 @@ function V2Coach({ data, onDone, linkedEntryId }) {
   const [resp,setResp]=useState(null); const [loading,setLoading]=useState(true); const [vis,setVis]=useState(false);
   const [messages,setMessages]=useState([]); const [sending,setSending]=useState(false);
   const [entryId,setEntryId]=useState(linkedEntryId||null);
+  const entryIdRef=useRef(linkedEntryId||null);
   const memCtxRef=useRef(""); const respRef=useRef(null);
   const pat = detectPatternFromSpirals(data.spirals||[]);
   const pm = PATTERN_META[pat];
@@ -1394,15 +1396,15 @@ BELIEF: "${allLimiting[0]||"I'm not ready"}"
             if (token) {
               const aiResp = paras.join("\n\n")+(closer?"\n\n"+closer:"");
               if (linkedEntryId) {
-                callJournal("update",{ entry_id:linkedEntryId, ai_response_v2:aiResp });
-                setEntryId(linkedEntryId);
+                await callJournal("update",{ entry_id:linkedEntryId, ai_response_v2:aiResp });
+                setEntryId(linkedEntryId); entryIdRef.current=linkedEntryId;
               } else {
                 try {
                   const sr = await callJournal("save",{
                     situation: data.situation, feeling: data.feeling,
                     ai_response: aiResp, entry_body:"", source:"auto"
                   });
-                  if (sr&&sr.entry&&sr.entry.id) setEntryId(sr.entry.id);
+                  if (sr&&sr.entry&&sr.entry.id) { setEntryId(sr.entry.id); entryIdRef.current=sr.entry.id; }
                 } catch(e2) {}
               }
             }
@@ -1431,7 +1433,7 @@ BELIEF: "${allLimiting[0]||"I'm not ready"}"
       if (reply) {
         const withBoth=[...withUser,{role:"assistant",content:reply}];
         setMessages(withBoth);
-        const eid=entryId;
+        const eid=entryIdRef.current;
         if (eid) try { callJournal("append_messages",{entry_id:eid,messages:[{role:"user",content:userText},{role:"assistant",content:reply}]}); } catch(e){}
       }
     } catch(e) {}
