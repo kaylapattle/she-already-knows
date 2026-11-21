@@ -74,3 +74,7 @@ alter table beta_emails enable row level security;
 -- V2 deeper-dive response stored on the same journal entry as the V1 response.
 -- Run after the journal_entries table exists (see seed-journal.sql or manual setup).
 alter table journal_entries add column if not exists ai_response_v2 text;
+
+-- Follow-up conversation turns (user/assistant pairs) stored as a JSONB array.
+-- Format: [{"role":"user","content":"..."}, {"role":"assistant","content":"..."}, ...]
+alter table journal_entries add column if not exists messages jsonb not null default '[]'::jsonb;
