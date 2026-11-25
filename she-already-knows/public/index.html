@@ -796,7 +796,7 @@ function JournalScreen({ onBack, onTweak }) {
                     <div style={{ marginTop:"6px", display:"flex", alignItems:"center", gap:"8px" }}>
                       <span style={{ fontSize:"10px", color:C.gold }}>❆</span>
                       <span style={{ fontFamily:F.body, fontSize:"10px", color:`${C.gold}88` }}>Includes AI insight</span>
-                      {entry.ai_response_v2&&<span style={{ fontFamily:F.body, fontSize:"10px", color:`${C.gold}BB`, background:"rgba(200,168,130,0.12)", borderRadius:"100px", padding:"2px 8px" }}>Deep dive</span>}
+                      {(entry.ai_response_v2||(Array.isArray(entry.messages)&&entry.messages.length>0))&&<span style={{ fontFamily:F.body, fontSize:"10px", color:`${C.gold}BB`, background:"rgba(200,168,130,0.12)", borderRadius:"100px", padding:"2px 8px" }}>Deep dive</span>}
                     </div>
                   )}
                 </button>
@@ -1419,7 +1419,7 @@ Then these 5 paragraphs, each 2–4 sentences:
                 try {
                   const sr = await callJournal("save",{
                     situation: data.situation, feeling: data.feeling,
-                    ai_response: aiResp, entry_body:"", source:"auto"
+                    ai_response_v2: aiResp, entry_body:"", source:"auto"
                   });
                   if (sr&&sr.entry&&sr.entry.id) { setEntryId(sr.entry.id); entryIdRef.current=sr.entry.id; }
                 } catch(e2) {}

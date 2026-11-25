@@ -37,7 +37,7 @@ exports.handler = async function (event) {
 
   // ── save — create a new entry + initial version row ───────────────────────────
   if (action === "save") {
-    const { situation, feeling, ai_response, entry_body, source } = body;
+    const { situation, feeling, ai_response, ai_response_v2, entry_body, source } = body;
     const { data: entry, error: eErr } = await db
       .from("journal_entries")
       .insert({
@@ -45,6 +45,7 @@ exports.handler = async function (event) {
         situation: situation || null,
         feeling: feeling || null,
         ai_response: ai_response || null,
+        ai_response_v2: ai_response_v2 || null,
         body: entry_body || "",
       })
       .select()
