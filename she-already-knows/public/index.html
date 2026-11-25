@@ -796,7 +796,7 @@ function JournalScreen({ onBack, onTweak }) {
                     <div style={{ marginTop:"6px", display:"flex", alignItems:"center", gap:"8px" }}>
                       <span style={{ fontSize:"10px", color:C.gold }}>❆</span>
                       <span style={{ fontFamily:F.body, fontSize:"10px", color:`${C.gold}88` }}>Includes AI insight</span>
-                      {entry.ai_response_v2&&<span style={{ fontFamily:F.body, fontSize:"10px", color:`${C.gold}BB`, background:"rgba(200,168,130,0.12)", borderRadius:"100px", padding:"2px 8px" }}>Deep dive</span>}
+                      {(entry.ai_response_v2||(Array.isArray(entry.messages)&&entry.messages.length>0))&&<span style={{ fontFamily:F.body, fontSize:"10px", color:`${C.gold}BB`, background:"rgba(200,168,130,0.12)", borderRadius:"100px", padding:"2px 8px" }}>Deep dive</span>}
                     </div>
                   )}
                 </button>
@@ -960,12 +960,12 @@ HER NAME: ${data.name}
 STUCK ON: "${data.situation}"
 EMOTIONAL SIGNAL: ${feelingLabel}
 
-STRUCTURE — 3 short paragraphs:
+STRUCTURE — 3 paragraphs, each 2–4 sentences max. Leave a blank line between each. No paragraph longer than 4 lines on mobile.
 ¶1 — MIRROR: Start with the exact emotional thoughts already in her head. Her language. Her name. She reads this and goes "...yes, exactly that."
 ¶2 — REVEAL: One layer deeper into that SAME emotion. What specific moment does this show up? What is she actually protecting herself from? "You keep saying [X] — but that's not the real fear. The real fear is [specific emotional truth]."
 ¶3 — ONE MOVE: One action tied to a real recognizable moment. End with one sentence she'd screenshot.
 
-SHORT. CONVERSATIONAL. NO HEADERS. NO BULLETS.`;
+CONVERSATIONAL. NO HEADERS. NO BULLETS. SHORT PUNCHY PARAGRAPHS.`;
 
       try {
         const d = await callClaude([{role:"user",content:prompt}], 650);
@@ -1068,14 +1068,14 @@ SHORT. CONVERSATIONAL. NO HEADERS. NO BULLETS.`;
           {isSubscriber ? (
             <>
               <p style={{ fontFamily:F.display, fontSize:"15px", color:C.text, marginBottom:"8px", lineHeight:"1.3" }}>Ready to go deeper?</p>
-              <p style={{ fontFamily:F.body, fontSize:"13px", color:C.textDim, lineHeight:"1.7", marginBottom:"16px" }}>Continue the conversation — this is included with your membership.</p>
-              <GoldBtn onClick={onUpgrade}>Continue the Conversation →</GoldBtn>
+              <p style={{ fontFamily:F.body, fontSize:"13px", color:C.textDim, lineHeight:"1.7", marginBottom:"16px" }}>Uncover the pattern behind what's keeping you stuck — this is included with your membership.</p>
+              <GoldBtn onClick={onUpgrade}>Go Deeper: Uncover the Pattern →</GoldBtn>
             </>
           ) : (
             <>
               <p style={{ fontFamily:F.display, fontSize:"15px", color:C.text, marginBottom:"8px", lineHeight:"1.3" }}>If this helped you hear yourself more clearly...</p>
-              <p style={{ fontFamily:F.body, fontSize:"13px", color:C.textDim, lineHeight:"1.7", marginBottom:"16px" }}>The first conversation is often just the beginning. Create your account to continue the conversation.</p>
-              <GoldBtn onClick={onUpgrade}>Continue the Conversation →</GoldBtn>
+              <p style={{ fontFamily:F.body, fontSize:"13px", color:C.textDim, lineHeight:"1.7", marginBottom:"16px" }}>The initial insight is just the surface. Create your account to uncover the pattern behind what's keeping you stuck.</p>
+              <GoldBtn onClick={onUpgrade}>Go Deeper: Uncover the Pattern →</GoldBtn>
               <p style={{ fontFamily:F.body, fontSize:"11px", color:C.textFaint, textAlign:"center", marginTop:"10px" }}>Your 7-day free trial begins after you create your account ($7.99/mo after · cancel anytime) — or sign in below if you already subscribed.</p>
               <button onClick={onUpgrade} style={{ background:"none", border:"none", color:`${C.gold}99`, fontFamily:F.body, fontSize:"12px", marginTop:"8px", cursor:"pointer", textDecoration:"underline" }}>Already subscribed? Sign in with your email</button>
             </>
@@ -1358,37 +1358,54 @@ function V2Coach({ data, onDone, linkedEntryId }) {
 
       const prompt = `You are ${data.name}'s higher self — the version that already did the inner work.
 
-STEP 1 — Identify PRIMARY emotional driver from her inputs:
+THIS IS THE DEEPER LAYER — she already received the initial insight. DO NOT repeat the same script, advice, phrasing, or examples from that first response. Build on it. Go one level further.
+
+Connect these three things specifically to each other:
+1. Her North Star: "${data.goal}" — what she is actively building toward
+2. Her Spirals: ${spiralList.join("; ")||"just stuck"} — what shows up when she avoids
+3. Her Block: "${allLimiting[0]||"I'm not ready"}" — the belief that keeps her looping
+
+Show her exactly how THIS situation is testing her old pattern versus who she is becoming.
+
+EMOTIONAL DRIVER — stay in one lane:
 - GUILT: feels selfish choosing herself
-- FEAR OF JUDGMENT: afraid of being seen, holds back from posting/sharing
+- FEAR OF JUDGMENT: afraid of being seen
 - SELF-TRUST: doesn't trust herself to follow through
 - OVERWHELM: too many options, shuts down
 
-Stay in that ONE emotional lane the entire response.
-
-RULES: Mirror her emotional language first. Use specific real moments (posting content, hitting publish, recording but not uploading, starting over). NEVER: healing / journey / trust the process / you've got this. Not abstract. Not generic.
+RULES:
+- Mirror her language. Reference her actual spirals and block.
+- Push back gently where she is still being soft with herself.
+- NEVER: healing / journey / trust the process / you've got this. Not abstract. Not generic.
+- Every paragraph is 2–4 sentences max. Leave a blank line between each.
 ${memCtx}
 NAME: ${data.name}
-GOAL: "${data.goal}"
+NORTH STAR: "${data.goal}"
 SITUATION: "${data.situation}"
 PATTERN: ${pat}
-WHAT'S SHOWING UP: ${spiralList.join("; ")||"Just stuck"}
-BELIEF: "${allLimiting[0]||"I'm not ready"}"
+SPIRALS: ${spiralList.join("; ")||"just stuck"}
+BLOCK: "${allLimiting[0]||"I'm not ready"}"
 
-5 SHORT PARAGRAPHS — no headers, no bullets:
-¶1 — MIRROR: Her exact emotional thoughts. Her name. She reads it and goes "...yes, that's exactly it."
-¶2 — REVEAL: One layer deeper into that SAME emotion. What specific moment does it show up? "You keep saying [X] — but that's not the real fear. The real fear is [specific thing tied to her situation]."
-¶3 — PATTERN AS PROTECTION: Name what it protected her from (one sentence). What it now costs her (one sentence).
-¶4 — BELIEF FLIP: Take "${allLimiting[0]||"I'm not ready"}". Identify the hidden assumption. Flip THAT assumption specifically. Vary tone — observational, direct, or grounding. Do NOT use: "you don't trust yourself" / "the only wrong choice is not choosing."
-¶5 — ONE MOVE + screenshot sentence.`;
+OUTPUT — write exactly this structure:
+
+QUOTE: [One line: what this situation just revealed about her — specific to her pattern, North Star, and situation. No quotation marks. Raw and direct.]
+
+Then these 5 paragraphs, each 2–4 sentences:
+¶1 — CONNECT: Tie her situation directly to her North Star ("${data.goal}"). Name the tension out loud: what she says she wants vs. what the pattern is making her do instead.
+¶2 — DEEPEN: What is the pattern protecting her from, specifically? Name the exact moment it shows up — reference her actual spirals. One layer beneath the surface.
+¶3 — PATTERN VS BECOMING: This moment is a test. Name exactly what the old pattern wants her to do. Then name what the version of her who already has the goal would do instead.
+¶4 — BELIEF FLIP: Take "${allLimiting[0]||"I'm not ready"}". Identify the hidden assumption. Flip it toward who she is becoming. Vary the tone — grounding or direct. Never: "you don't trust yourself" / "the only wrong choice is not choosing."
+¶5 — ONE MOVE: One action she can take today, tied to something specific in her situation. End with one sentence she would screenshot.`;
 
       try {
         const d2 = await callClaude([{role:"user",content:prompt}], 1200);
         const text = d2?.content?.map(c=>c.text||"").join("").trim();
         if (text&&text.length>200) {
-          const paras = text.split("\n").filter(p=>p.trim().length>3);
+          let revealQuote = null;
+          const rawParas = text.split("\n").filter(p=>p.trim().length>3);
+          const paras = rawParas.filter(p=>{ if (/^QUOTE:/i.test(p.trim())){ revealQuote=p.replace(/^QUOTE:\s*/i,"").replace(/^"|"$/g,"").trim(); return false; } return true; });
           const closer = paras.pop();
-          const built = {...local,aiBody:paras.join("\n\n"),aiCloser:closer,isAI:true};
+          const built = {...local,aiBody:paras.join("\n\n"),aiCloser:closer,isAI:true,revealQuote};
           setResp(built); respRef.current = built;
           // Auto-save to journal for logged-in subscribers (best-effort)
           try {
@@ -1402,7 +1419,7 @@ BELIEF: "${allLimiting[0]||"I'm not ready"}"
                 try {
                   const sr = await callJournal("save",{
                     situation: data.situation, feeling: data.feeling,
-                    ai_response: aiResp, entry_body:"", source:"auto"
+                    ai_response_v2: aiResp, entry_body:"", source:"auto"
                   });
                   if (sr&&sr.entry&&sr.entry.id) { setEntryId(sr.entry.id); entryIdRef.current=sr.entry.id; }
                 } catch(e2) {}
@@ -1444,7 +1461,7 @@ BELIEF: "${allLimiting[0]||"I'm not ready"}"
     <div style={{ padding:"48px 24px", maxWidth:"440px", margin:"0 auto" }}>
       <div style={{ background:`${pm.color}12`, border:`1px solid ${pm.color}38`, borderLeft:`3px solid ${pm.color}`, borderRadius:"12px", padding:"14px 16px", marginBottom:"14px" }}>
         <p style={{ fontFamily:F.body, fontSize:"10px", color:pm.color, letterSpacing:"2px", textTransform:"uppercase", marginBottom:"8px" }}>Here's what this revealed about you</p>
-        {pm.callout.split("\n").map((line,i)=>(
+        {(resp?.revealQuote||pm.callout).split("\n").map((line,i)=>(
           <p key={i} style={{ fontFamily:F.display, fontSize:"14px", color:"rgba(245,239,230,0.88)", margin:i===0?"0 0 4px":"0", lineHeight:"1.5", fontStyle:"italic" }}>{line}</p>
         ))}
       </div>
@@ -1493,17 +1510,34 @@ function V2Breakdown({ data, onDone }) {
   const bd = buildDeepResponse(data);
   const pat = detectPatternFromSpirals(data.spirals||[]);
 
-  const fearChose = {
-    people_pleasing:["Ask everyone else what they think","Make the decision that keeps the peace","Put their comfort ahead of your clarity","Stay silent about what you actually need"],
-    overthinking:   ["Research it one more time","Wait until you feel more ready","Make a plan instead of a move","Collect more information instead of acting"],
-    abandonment:    ["Slow down right when momentum built","Find a reason this is the wrong path","Let one missed day become a full stop","Pull back right before it gets real"],
-  }[pat];
+  const spiralBulletMap = {
+    a:{ fear:"Manage everyone else's feelings instead of your own",   higher:"Name what YOU need first — before managing theirs" },
+    b:{ fear:"Stay invisible so no one can judge you",                higher:"Share it before it feels fully ready" },
+    c:{ fear:"Stay frozen and call it not knowing enough",            higher:"Take one step before certainty arrives" },
+    d:{ fear:"Ask everyone else what they'd do — and defer to them",  higher:"Make the call only you can make" },
+    e:{ fear:"Pretend you don't want what you clearly do",            higher:"Say what you actually want — out loud" },
+    f:{ fear:"Put yourself last so the guilt stays quiet",            higher:"Choose yourself without waiting for permission" },
+    g:{ fear:"Let one pause become a full stop, again",               higher:"Pick up exactly where you left off, today" },
+    h:{ fear:"Wait until you feel more ready",                        higher:"Move now with exactly what you have" },
+  };
 
-  const higherWould = {
-    people_pleasing:["Ask herself what SHE actually needs","Make the decision that honors her values","Say the true thing, even uncomfortably","Choose her own clarity over their comfort"],
-    overthinking:   ["Move with what she already has","Take one action before she feels ready","Trust the next step reveals the step after","Move, then adjust — not the other way around"],
-    abandonment:    ["Stay through the moment she usually leaves","Treat one missed day as a pause","Keep going when it stops feeling exciting","Remind herself: this is where it gets real"],
-  }[pat];
+  const selectedSpirals = (data.spirals||[]).filter(id=>spiralBulletMap[id]).slice(0,4);
+
+  const fearChose = selectedSpirals.length>=2
+    ? selectedSpirals.map(id=>spiralBulletMap[id].fear)
+    : {
+        people_pleasing:["Ask everyone else what they think","Make the decision that keeps the peace","Put their comfort ahead of your clarity","Stay silent about what you actually need"],
+        overthinking:   ["Research it one more time","Wait until you feel more ready","Make a plan instead of a move","Collect more information instead of acting"],
+        abandonment:    ["Slow down right when momentum built","Find a reason this is the wrong path","Let one missed day become a full stop","Pull back right before it gets real"],
+      }[pat];
+
+  const higherWould = selectedSpirals.length>=2
+    ? selectedSpirals.map(id=>spiralBulletMap[id].higher)
+    : {
+        people_pleasing:["Ask herself what SHE actually needs","Make the decision that honors her values","Say the true thing, even uncomfortably","Choose her own clarity over their comfort"],
+        overthinking:   ["Move with what she already has","Take one action before she feels ready","Trust the next step reveals the step after","Move, then adjust — not the other way around"],
+        abandonment:    ["Stay through the moment she usually leaves","Treat one missed day as a pause","Keep going when it stops feeling exciting","Remind herself: this is where it gets real"],
+      }[pat];
 
   return (
     <div style={{ padding:"40px 24px", maxWidth:"440px", margin:"0 auto", opacity:v?1:0, transform:v?"none":"translateY(14px)", transition:"all 0.6s ease" }}>
